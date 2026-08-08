@@ -998,14 +998,19 @@ function renderReports(main) {
     // الملخص اليومي: تجميع الحركات حسب اليوم (الوقت الدقيق لكل حركة يظهر بسجل الحركات بالأسفل)
     const dailyMap = {};
     state.transactions.filter(tx => passCat(nameToCat[tx.item_name] || "بدون فئة")).forEach(tx => {
-      const day = new Date(tx.created_at).toLocaleDateString("ar-EG", { year: "numeric", month: "2-digit", day: "2-digit" });
-      if (!dailyMap[day]) dailyMap[day] = { inCount: 0, inQty: 0, outCount: 0, outQty: 0 };
-      if (tx.type === "in") { dailyMap[day].inCount++; dailyMap[day].inQty += Number(tx.qty); }
-      else { dailyMap[day].outCount++; dailyMap[day].outQty += Number(tx.qty); }
+      const d = new Date(tx.created_at);
+      // مفتاح ترتيب رقمي دقيق (YYYY-MM-DD) — منفصل عن شكل العرض، عشان الترتيب يكون صحيح
+      // دايمًا بغض النظر عن صيغة عرض التاريخ العربية (اللي بتبدأ باليوم مش بالسنة)
+      const sortKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const label = d.toLocaleDateString("ar-EG", { year: "numeric", month: "2-digit", day: "2-digit" });
+      if (!dailyMap[sortKey]) dailyMap[sortKey] = { label, inCount: 0, inQty: 0, outCount: 0, outQty: 0 };
+      if (tx.type === "in") { dailyMap[sortKey].inCount++; dailyMap[sortKey].inQty += Number(tx.qty); }
+      else { dailyMap[sortKey].outCount++; dailyMap[sortKey].outQty += Number(tx.qty); }
     });
+    // الأحدث أولًا: ترتيب تنازلي على المفتاح الرقمي (يعمل صح دايمًا بعكس مقارنة النص العربي)
     dailyRows = Object.entries(dailyMap).sort((a, b) => b[0].localeCompare(a[0]));
-    $("#daily-body").innerHTML = dailyRows.length ? dailyRows.map(([day, d]) => `
-      <tr><td style="font-weight:700;" class="mono">${day}</td><td class="mono">${d.inCount}</td><td class="mono" style="color:var(--green);">+${d.inQty}</td>
+    $("#daily-body").innerHTML = dailyRows.length ? dailyRows.map(([, d]) => `
+      <tr><td style="font-weight:700;" class="mono">${d.label}</td><td class="mono">${d.inCount}</td><td class="mono" style="color:var(--green);">+${d.inQty}</td>
       <td class="mono">${d.outCount}</td><td class="mono" style="color:var(--red);">-${d.outQty}</td></tr>`).join("")
       : `<tr><td colspan="5"><div class="empty-note">لا توجد حركات مسجّلة بعد.</div></td></tr>`;
 
@@ -1135,8 +1140,8 @@ function renderReports(main) {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(stockRows), "المخزون الحالي");
 
     if ($("#inc-daily").checked) {
-      const dailySheetRows = dailyRows.map(([day, d]) => ({
-        "اليوم": day, "عدد عمليات الإدخال": d.inCount, "إجمالي الكمية المُدخلة": d.inQty,
+      const dailySheetRows = dailyRows.map(([, d]) => ({
+        "اليوم": d.label, "عدد عمليات الإدخال": d.inCount, "إجمالي الكمية المُدخلة": d.inQty,
         "عدد عمليات السحب": d.outCount, "إجمالي الكمية المسحوبة": d.outQty,
       }));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dailySheetRows.length ? dailySheetRows : [{ "ملاحظة": "لا توجد بيانات" }]), "الملخص اليومي");
@@ -1956,13 +1961,20 @@ function openSupplierModal(existing, main) {
 }
 
 /* ---------------- شاشة إدارة مستخدمي تيليجرام (للمدير فقط) ---------------- */
+let _tgBotUsernameCache = { token: null, username: null };
 async function renderTelegramUsers(main) {
   if (!_profilesLoaded) await ensureProfiles();
 
   let botUsername = null;
   if (state.settings.telegram_bot_token) {
-    const check = await callTelegramService({ action: "validate", token: state.settings.telegram_bot_token });
-    if (check && check.valid) botUsername = check.botUsername || null;
+    if (_tgBotUsernameCache.token === state.settings.telegram_bot_token) {
+      // نفس التوكن زي آخر مرة — استخدم النتيجة المحفوظة بدل طلب شبكة جديد لسيرفرات تيليجرام
+      botUsername = _tgBotUsernameCache.username;
+    } else {
+      const check = await callTelegramService({ action: "validate", token: state.settings.telegram_bot_token });
+      if (check && check.valid) botUsername = check.botUsername || null;
+      _tgBotUsernameCache = { token: state.settings.telegram_bot_token, username: botUsername };
+    }
   }
   const botLink = botUsername ? `https://t.me/${botUsername}` : null;
 

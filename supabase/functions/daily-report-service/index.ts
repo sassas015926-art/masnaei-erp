@@ -25,7 +25,7 @@ import { wrapEmail } from "../_shared/email-template.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // نفس آلية email-service.ts بالظبط: العنوان يُقرأ من Secret اختياري EMAIL_FROM_ADDRESS
-const DEFAULT_FROM = Deno.env.get("EMAIL_FROM_ADDRESS") || "نظام إدارة المخازن <onboarding@resend.dev>";
+const DEFAULT_FROM = Deno.env.get("EMAIL_FROM_ADDRESS") || "Masnaei ERP <noreply@masnak.com>";
 const TIMEZONE = "Europe/Istanbul";
 
 // رؤوس CORS + دالة JSON موحّدة — بنفس النمط المُختبَر والناجح فعليًا في email-service.ts.
@@ -153,11 +153,11 @@ Deno.serve(async (req) => {
     const purchaseRowsHtml = needsPurchase.length
       ? needsPurchase.map(it => `
           <tr style="border-top:1px solid #E5EAF1;">
-            <td style="padding:8px 10px; font-weight:700;">${it.name}</td>
-            <td style="padding:8px 10px;" class="mono">${it.qty} ${it.unit || ""}</td>
-            <td style="padding:8px 10px;" class="mono">${it.max_qty} ${it.unit || ""}</td>
-            <td style="padding:8px 10px;" class="mono">${Math.round(it.pct)}%</td>
-            <td style="padding:8px 10px;"><span style="background:${it.status === "critical" ? "#FBEAE9" : "#FAF0DC"}; color:${it.status === "critical" ? "#D6473F" : "#A8701E"}; padding:3px 10px; border-radius:999px; font-size:11.5px; font-weight:800;">${statusLabel(it.status)}</span></td>
+            <td style="padding:8px 10px; font-weight:700; border:1px solid #E5EAF1;">${it.name}</td>
+            <td style="padding:8px 10px; border:1px solid #E5EAF1;" class="mono">${it.qty} ${it.unit || ""}</td>
+            <td style="padding:8px 10px; border:1px solid #E5EAF1;" class="mono">${it.max_qty} ${it.unit || ""}</td>
+            <td style="padding:8px 10px; border:1px solid #E5EAF1;" class="mono">${Math.round(it.pct)}%</td>
+            <td style="padding:8px 10px; border:1px solid #E5EAF1;"><span style="background:${it.status === "critical" ? "#FBEAE9" : "#FAF0DC"}; color:${it.status === "critical" ? "#D6473F" : "#A8701E"}; padding:3px 10px; border-radius:999px; font-size:11.5px; font-weight:800;">${statusLabel(it.status)}</span></td>
           </tr>`).join("")
       : `<tr><td colspan="5" style="padding:14px; text-align:center; color:#888;">لا توجد أصناف تحتاج شراء حاليًا ✅</td></tr>`;
 
@@ -166,7 +166,7 @@ Deno.serve(async (req) => {
       ctaLabel: "افتح لوحة التحكم",
       bodyHtml: `
         <p style="color:#8A94A6; margin:0 0 20px; font-size:13px;">${todayLabel} — الساعة ${nowLabel}</p>
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate; border-spacing:8px 0; margin-bottom:22px;">
+        <table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate; border-spacing:8px 0; margin-bottom:22px;">
           <tr>
             <td style="width:33%; background:#EEF5F6; border-radius:10px; padding:12px; text-align:center;"><div style="font-size:22px; font-weight:800;">${allItems.length}</div><div style="font-size:12px; color:#666;">إجمالي الأصناف</div></td>
             <td style="width:33%; background:#FBEAE9; border-radius:10px; padding:12px; text-align:center;"><div style="font-size:22px; font-weight:800; color:#D6473F;">${criticalCount}</div><div style="font-size:12px; color:#666;">أصناف حرجة</div></td>
@@ -174,9 +174,9 @@ Deno.serve(async (req) => {
           </tr>
         </table>
         <h3 style="margin:0 0 10px; font-size:15px;">🛒 الأصناف المطلوب شراؤها</h3>
-        <table style="width:100%; border-collapse:collapse; font-size:13px; margin-bottom:22px;">
+        <table dir="rtl" style="width:100%; border-collapse:collapse; font-size:13px; margin-bottom:22px; border:1px solid #E5EAF1;">
           <thead><tr style="background:#DFEBEC; text-align:right;">
-            <th style="padding:8px 10px;">الصنف</th><th style="padding:8px 10px;">الكمية الحالية</th><th style="padding:8px 10px;">الحد الأقصى</th><th style="padding:8px 10px;">نسبة الامتلاء</th><th style="padding:8px 10px;">الحالة</th>
+            <th style="padding:8px 10px; border:1px solid #E5EAF1;">الصنف</th><th style="padding:8px 10px; border:1px solid #E5EAF1;">الكمية الحالية</th><th style="padding:8px 10px; border:1px solid #E5EAF1;">الحد الأقصى</th><th style="padding:8px 10px; border:1px solid #E5EAF1;">نسبة الامتلاء</th><th style="padding:8px 10px; border:1px solid #E5EAF1;">الحالة</th>
           </tr></thead>
           <tbody>${purchaseRowsHtml}</tbody>
         </table>

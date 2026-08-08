@@ -29,7 +29,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // Secret باسم EMAIL_FROM_ADDRESS في Supabase (Project Settings → Edge Functions → Secrets)
 // بقيمة مثل: "تنبيهات المخزن <alerts@yourdomain.com>" — بعد ربط نطاقك في Resend.
 // طالما السِّر غير موجود، يُستخدم العنوان التجريبي الافتراضي كما هو الآن.
-const DEFAULT_FROM = Deno.env.get("EMAIL_FROM_ADDRESS") || "نظام إدارة المخازن <onboarding@resend.dev>";
+const DEFAULT_FROM = Deno.env.get("EMAIL_FROM_ADDRESS") || "Masnaei ERP <noreply@masnak.com>";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -208,11 +208,11 @@ if (action === "validate") {
               <div style="background:${accentBg}; border-right:4px solid ${accentColor}; padding:12px 16px; border-radius:8px; margin-bottom:18px; font-weight:700; color:${accentColor};">
                 وصل الصنف إلى ${levelLabel}
               </div>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:13.5px;">
-                <tr><td style="padding:6px 0; color:#8A94A6; width:130px;">الصنف</td><td style="padding:6px 0; font-weight:700;">${itemName}</td></tr>
-                <tr><td style="padding:6px 0; color:#8A94A6;">الكمية الحالية</td><td style="padding:6px 0; font-weight:700;">${qty} ${unit}</td></tr>
-                <tr><td style="padding:6px 0; color:#8A94A6;">الحد الأقصى</td><td style="padding:6px 0; font-weight:700;">${maxQty} ${unit}</td></tr>
-                <tr><td style="padding:6px 0; color:#8A94A6;">النسبة الحالية</td><td style="padding:6px 0; font-weight:700; color:${accentColor};">${Number(pct).toFixed(1)}%</td></tr>
+              <table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" style="font-size:13.5px; border-collapse:collapse; border:1px solid #E5EAF1;">
+                <tr><td style="padding:8px 10px; color:#8A94A6; width:130px; border:1px solid #E5EAF1;">الصنف</td><td style="padding:8px 10px; font-weight:700; border:1px solid #E5EAF1;">${itemName}</td></tr>
+                <tr><td style="padding:8px 10px; color:#8A94A6; border:1px solid #E5EAF1;">الكمية الحالية</td><td style="padding:8px 10px; font-weight:700; border:1px solid #E5EAF1;">${qty} ${unit}</td></tr>
+                <tr><td style="padding:8px 10px; color:#8A94A6; border:1px solid #E5EAF1;">الحد الأقصى</td><td style="padding:8px 10px; font-weight:700; border:1px solid #E5EAF1;">${maxQty} ${unit}</td></tr>
+                <tr><td style="padding:8px 10px; color:#8A94A6; border:1px solid #E5EAF1;">النسبة الحالية</td><td style="padding:8px 10px; font-weight:700; color:${accentColor}; border:1px solid #E5EAF1;">${Number(pct).toFixed(1)}%</td></tr>
               </table>
             `,
           }),

@@ -11,7 +11,8 @@
 // ============================================================
 
 export const APP_VERSION = "1.0";
-export const DEFAULT_APP_URL = "https://masnaei-erp.vercel.app";
+export const DEFAULT_APP_URL = "https://app.masnak.com";
+export const LOGO_URL = "https://app.masnak.com/email-logo.png";
 
 export function wrapEmail(opts: {
   title: string;
@@ -34,13 +35,12 @@ export function wrapEmail(opts: {
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px; width:100%; background:#ffffff; border-radius:14px; overflow:hidden; box-shadow:0 2px 10px rgba(18,42,74,0.07); font-family:Tahoma, Arial, sans-serif;">
         <tr><td style="height:5px; background:linear-gradient(90deg,#17899F,#1AA34A); font-size:0; line-height:0;">&nbsp;</td></tr>
         <tr><td style="padding:26px 28px 14px; text-align:center;">
-          <span style="display:inline-block; background:#122A4A; color:#ffffff; font-weight:800; font-size:14.5px; padding:8px 18px; border-radius:8px; letter-spacing:.3px;">Masnaei&nbsp;ERP</span>
-          <div style="margin-top:10px; font-size:11.5px; color:#8A94A6;">نظام إدارة المخازن</div>
+          <img src="${LOGO_URL}" alt="Masnaei ERP" width="210" style="display:block; margin:0 auto; max-width:210px; width:210px; height:auto; border:0;">
         </td></tr>
         <tr><td style="padding:0 28px 18px; text-align:center; border-bottom:1px solid #EEF1F5;">
-          <h1 style="margin:0; font-size:19px; color:#122A4A;">${opts.title}</h1>
+          <h1 style="margin:0; font-size:19px; color:#122A4A;" dir="rtl">${opts.title}</h1>
         </td></tr>
-        <tr><td style="padding:24px 28px; color:#122A4A; font-size:14px; line-height:1.9;">
+        <tr><td style="padding:24px 28px; color:#122A4A; font-size:14px; line-height:1.9;" dir="rtl" align="right">
           ${opts.bodyHtml}
         </td></tr>
         <tr><td style="padding:4px 28px 28px; text-align:center;">
