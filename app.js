@@ -463,6 +463,10 @@ function showApp() {
   clearInterval(state.pollTimer);
   state.pollTimer = setInterval(async () => {
     if (document.querySelector(".modal-overlay")) return;
+    // لو المستخدم بيكتب دلوقتي في أي حقل (مثال: بيضيف إيميل إشعارات جديد)، منعملش
+    // أي إعادة رسم في الجولة دي، عشان منمسحش اللي لسه بيكتبه قبل ما يحفظه
+    const active = document.activeElement;
+    if (active && ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName)) return;
     await Promise.all([loadItems(), loadTransactions()]);
     render();
   }, 25000);
