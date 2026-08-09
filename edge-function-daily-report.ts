@@ -76,24 +76,26 @@ Deno.serve(async (req) => {
       isManualTest = false;
     } else {
       const callerToken = authHeader.replace("Bearer ", "");
+      // توكنات مستخدمي Supabase الحقيقيين دايمًا بتبدأ بـ "eyJ" (شكل JWT قياسي).
+      // أي حاجة تانية (زي مفتاح service role بشكله الجديد sb_secret_...) مستحيل تكون
+      // مستخدم حقيقي، فبنرجع فورًا من غير ما نستنى اتصال شبكة بطيء (كان ده سبب التعليق 5 ثواني).
+      if (!callerToken.startsWith("eyJ")) {
+        return json({
+          error: "غير مصرح",
+          debug: {
+            exactMatch: callerToken === SERVICE_ROLE_KEY,
+            receivedLength: callerToken.length, expectedLength: SERVICE_ROLE_KEY.length,
+            receivedStart: callerToken.slice(0, 10), expectedStart: SERVICE_ROLE_KEY.slice(0, 10),
+            receivedEnd: callerToken.slice(-10), expectedEnd: SERVICE_ROLE_KEY.slice(-10),
+          },
+        }, 401);
+      }
       const { data: callerData } = callerToken ? await admin.auth.getUser(callerToken) : { data: null };
       const { data: callerProfile } = callerData?.user
         ? await admin.from("profiles").select("role, is_active").eq("id", callerData.user.id).single()
         : { data: null };
       if (!callerProfile || callerProfile.role !== "admin" || callerProfile.is_active === false) {
-        if (!callerData?.user) {
-        // تشخيص مؤقت (هنشيله بعد ما نلاقي السبب): مقارنة آمنة بدون كشف المفتاح كامل
-        return json({
-          error: "غير مصرح",
-          debug: {
-            receivedLength: callerToken.length,
-            expectedLength: SERVICE_ROLE_KEY.length,
-            receivedStart: callerToken.slice(0, 6), receivedEnd: callerToken.slice(-6),
-            expectedStart: SERVICE_ROLE_KEY.slice(0, 6), expectedEnd: SERVICE_ROLE_KEY.slice(-6),
-          },
-        }, 401);
-      }
-      return json({ error: "غير مصرح" }, 401);
+        return json({ error: "غير مصرح" }, 401);
       }
       isManualTest = true;
     }
