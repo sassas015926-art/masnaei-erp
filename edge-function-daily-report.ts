@@ -81,7 +81,19 @@ Deno.serve(async (req) => {
         ? await admin.from("profiles").select("role, is_active").eq("id", callerData.user.id).single()
         : { data: null };
       if (!callerProfile || callerProfile.role !== "admin" || callerProfile.is_active === false) {
-        return json({ error: "غير مصرح" }, 401);
+        if (!callerData?.user) {
+        // تشخيص مؤقت (هنشيله بعد ما نلاقي السبب): مقارنة آمنة بدون كشف المفتاح كامل
+        return json({
+          error: "غير مصرح",
+          debug: {
+            receivedLength: callerToken.length,
+            expectedLength: SERVICE_ROLE_KEY.length,
+            receivedStart: callerToken.slice(0, 6), receivedEnd: callerToken.slice(-6),
+            expectedStart: SERVICE_ROLE_KEY.slice(0, 6), expectedEnd: SERVICE_ROLE_KEY.slice(-6),
+          },
+        }, 401);
+      }
+      return json({ error: "غير مصرح" }, 401);
       }
       isManualTest = true;
     }
