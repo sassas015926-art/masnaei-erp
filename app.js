@@ -2211,8 +2211,11 @@ async function callSendTelegram({ type, target, message }) {
    كل قناة مستقلة تمامًا عن التانية: فشل Telegram ميوقفش الإيميل، والعكس. */
 async function notifyStockAlert(itemName, qty, maxQty, unit, pct, level) {
   const results = { email: null, telegram: null };
+  const isCritical = level === "critical";
   if (state.settings.resend_api_key) {
-    const recipients = (state.settings.notify_emails || "").split(",").map(e => e.trim()).filter(Boolean);
+    const col = isCritical ? "notify_critical" : "notify_low";
+    const { data: recipientRows } = await sb.from("email_recipients").select("email").eq("is_active", true).eq(col, true);
+    const recipients = (recipientRows || []).map(r => r.email).filter(Boolean);
     if (recipients.length) {
       try {
         results.email = await callEmailService({
@@ -2224,12 +2227,11 @@ async function notifyStockAlert(itemName, qty, maxQty, unit, pct, level) {
     }
   }
   if (state.settings.telegram_bot_token) {
-    const isCritical = level === "critical";
     const text = `${isCritical ? "🚨" : "⚠️"} تنبيه مخزون ${isCritical ? "حرج" : "منخفض"}\n\nالصنف:\n${itemName}\n\nالكمية الحالية:\n${qty} ${unit || ""}\n\nالحد الأقصى:\n${maxQty} ${unit || ""}\n\nالنسبة:\n${Math.round(pct)}%`;
     try {
       results.telegram = await callSendTelegram({
         type: isCritical ? "stock_critical" : "stock_warning",
-        target: { mode: "all" },
+        target: { mode: "notify_type", type: isCritical ? "critical" : "low" },
         message: text,
       });
     } catch (e) { results.telegram = { error: String(e) }; }

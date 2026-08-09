@@ -42,7 +42,8 @@ type Target =
   | { mode: "all" }
   | { mode: "role"; role: string }
   | { mode: "user"; telegramUserId: string }
-  | { mode: "group"; groupId: string };
+  | { mode: "group"; groupId: string }
+  | { mode: "notify_type"; type: "critical" | "low" | "daily_report" };
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -114,6 +115,10 @@ Deno.serve(async (req) => {
       const ids = (members || []).map((m: { telegram_user_id: string }) => m.telegram_user_id);
       if (!ids.length) return json({ total: 0, sent: 0, failed: 0, blocked: 0 });
       q = q.in("id", ids);
+    } else if (target.mode === "notify_type") {
+      const col = target.type === "critical" ? "notify_critical" : target.type === "low" ? "notify_low" : target.type === "daily_report" ? "notify_daily_report" : null;
+      if (!col) return json({ error: "نوع الإشعار غير معروف" }, 400);
+      q = q.eq(col, true);
     } else if (target.mode !== "all") {
       return json({ error: "target.mode غير معروف" }, 400);
     }

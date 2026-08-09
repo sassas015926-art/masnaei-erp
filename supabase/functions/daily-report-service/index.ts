@@ -21,6 +21,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { wrapEmail } from "../_shared/email-template.ts";
+import { sendTelegramMessage } from "../_shared/telegram-api.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -201,41 +202,50 @@ Deno.serve(async (req) => {
 
     const results: any = { email: null, telegram: null };
 
-    // ---------- الإرسال عبر Email (Resend مباشرة) ----------
-    if (settings.resend_api_key) {
-      const recipients = (settings.notify_emails || "").split(",").map((e: string) => e.trim()).filter(Boolean);
-      if (recipients.length) {
-        try {
-          const r = await fetch("https://api.resend.com/emails", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${settings.resend_api_key}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ from: DEFAULT_FROM, to: recipients, subject: `📊 تقرير المخزن اليومي — ${todayLabel}`, html: htmlText }),
-          });
-          const rb = await r.json().catch(() => ({}));
-          results.email = r.ok ? { success: true } : { success: false, reason: rb.message };
-        } catch (e) { results.email = { success: false, reason: String(e) }; }
-      }
-    }
+    // ---------- الإرسال عبر Email (Resend مباشرة) — لمستلمي التقرير اليومي فقط ----------
+    const { data: emailRecipients } = await admin
+      .from("email_recipients")
+      .select("email")
+      .eq("is_active", true)
+      .eq("notify_daily_report", true);
+    const emailTo = (emailRecipients || []).map((r: { email: string }) => r.email).filter(Boolean);
 
-    // ---------- الإرسال عبر Telegram مباشرة ----------
-    if (settings.telegram_bot_token && settings.telegram_chat_id) {
+    if (settings.resend_api_key && emailTo.length) {
       try {
-        const r = await fetch(`https://api.telegram.org/bot${settings.telegram_bot_token}/sendMessage`, {
+        const r = await fetch("https://api.resend.com/emails", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: settings.telegram_chat_id, text: plainText }),
+          headers: { Authorization: `Bearer ${settings.resend_api_key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ from: DEFAULT_FROM, to: emailTo, subject: `📊 تقرير المخزن اليومي — ${todayLabel}`, html: htmlText }),
         });
         const rb = await r.json().catch(() => ({}));
-        results.telegram = rb.ok ? { success: true } : { success: false, reason: rb.description };
-      } catch (e) { results.telegram = { success: false, reason: String(e) }; }
+        results.email = r.ok ? { success: true } : { success: false, reason: rb.message };
+      } catch (e) { results.email = { success: false, reason: String(e) }; }
     }
 
-    // لا نُسجّل "تم الإرسال" إلا لو كل قناة مُفعّلة (لها بيانات إعداد) نجحت فعليًا.
-    // القناة الغير مُفعَّلة أصلًا (زي لو الإيميل مش متظبط) لا تُعتبر فشلًا ولا توقف التسجيل.
+    // ---------- الإرسال عبر Telegram — لكل مستخدمي تيليجرام المفعّل عندهم التقرير اليومي ----------
+    // (نفس جدول telegram_users المستخدم في تنبيهات المخزون، مش رقم محادثة ثابت قديم)
+    const { data: tgRecipients } = await admin
+      .from("telegram_users")
+      .select("chat_id")
+      .eq("is_active", true)
+      .eq("notify_daily_report", true);
+    const tgChatIds = (tgRecipients || []).map((r: { chat_id: number | string }) => r.chat_id).filter(Boolean);
+
+    if (settings.telegram_bot_token && tgChatIds.length) {
+      let tgSent = 0, tgFailed = 0;
+      for (const chatId of tgChatIds) {
+        const r = await sendTelegramMessage(settings.telegram_bot_token, chatId, plainText);
+        if (r.ok) tgSent++; else tgFailed++;
+      }
+      results.telegram = tgSent > 0 ? { success: true, sent: tgSent, failed: tgFailed } : { success: false, reason: `فشل الإرسال لكل الـ ${tgFailed} مستلم` };
+    }
+
+    // لا نُسجّل "تم الإرسال" إلا لو كل قناة مُفعّلة (لها مستلمين فعليًا) نجحت فعليًا.
+    // القناة الغير مُفعَّلة أصلًا (زي لو مفيش مستلم واحد مفعّل عليه التقرير اليومي) لا تُعتبر فشلًا ولا توقف التسجيل.
     // هذا يضمن: لو فشلت محاولة الساعة 4 (خطأ شبكة/مفتاح خاطئ)، هيتعاد المحاولة كل 15 دقيقة
     // لحد ما تنجح أو ينتهي اليوم — بدل ما يتسجّل "تم" غلط ويوقف أي محاولة تانية.
-    const emailAttempted = !!(settings.resend_api_key && (settings.notify_emails || "").split(",").map((e: string) => e.trim()).filter(Boolean).length);
-    const telegramAttempted = !!(settings.telegram_bot_token && settings.telegram_chat_id);
+    const emailAttempted = !!(settings.resend_api_key && emailTo.length);
+    const telegramAttempted = !!(settings.telegram_bot_token && tgChatIds.length);
     const emailOk = !emailAttempted || results.email?.success === true;
     const telegramOk = !telegramAttempted || results.telegram?.success === true;
 
