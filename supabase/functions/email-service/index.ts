@@ -134,7 +134,7 @@ if (action === "validate") {
 }
 
     if (action === "sendTest") {
-      const { to } = body;
+      const { to, factoryName } = body;
 
       if (!to || typeof to !== "string") {
         return json({ error: "إيميل المستقبل ناقص" }, 400);
@@ -152,6 +152,7 @@ if (action === "validate") {
           subject: "بريد اختباري — نظام إدارة المخازن ✅",
           html: wrapEmail({
             title: "✅ هذه رسالة اختبار",
+            factoryName: factoryName || undefined,
             bodyHtml: `
               <p>لو وصلتك الرسالة دي، يبقى إعدادات إرسال الإيميلات في نظامك شغالة صح.</p>
               <p style="color:#8A94A6; font-size:12px; margin-top:16px;">تم الإرسال في: ${new Date().toLocaleString("ar-EG")}</p>
@@ -172,7 +173,7 @@ if (action === "validate") {
       return json({ success: true });
     }
     if (action === "sendLowStockAlert") {
-      const { to, itemName, qty, maxQty, unit, pct, level } = body;
+      const { to, itemName, qty, maxQty, unit, pct, level, factoryName } = body;
 
       if (!Array.isArray(to) || !to.length) {
         return json({ error: "إيميلات الاستقبال ناقصة" }, 400);
@@ -204,6 +205,7 @@ if (action === "validate") {
             title: `${isCritical ? "🔴" : "🟡"} تنبيه مخزون ${isCritical ? "حرج" : "منخفض"}`,
             accentColor: accentColor,
             ctaLabel: "افتح المخزون الآن",
+            factoryName: factoryName || undefined,
             bodyHtml: `
               <div style="background:${accentBg}; border-right:4px solid ${accentColor}; padding:12px 16px; border-radius:8px; margin-bottom:18px; font-weight:700; color:${accentColor};">
                 وصل الصنف إلى ${levelLabel}
@@ -234,7 +236,7 @@ if (action === "validate") {
     }
 
     if (action === "sendWelcome") {
-      const { to, fullName, username, password, roleLabel } = body;
+      const { to, fullName, username, password, roleLabel, factoryName } = body;
 
       if (!to || typeof to !== "string") {
         return json({ error: "البريد الإلكتروني ناقص" }, 400);
@@ -253,6 +255,7 @@ if (action === "validate") {
           html: wrapEmail({
             title: "🎉 حسابك جاهز",
             ctaLabel: "افتح النظام الآن",
+            factoryName: factoryName || undefined,
             bodyHtml: `
               <p>أهلًا ${fullName || ""} 👋</p>
               <p>تم إنشاء حسابك في نظام إدارة المخازن${roleLabel ? ` بدور "${roleLabel}"` : ""}. دي بيانات الدخول بتاعتك:</p>

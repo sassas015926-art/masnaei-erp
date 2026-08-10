@@ -1459,7 +1459,7 @@ function renderSettings(main) {
     if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) { statusEl.style.color = "var(--red)"; statusEl.textContent = "✗ اكتب إيميل صحيح لاستقبال رسالة الاختبار"; return; }
 
     testBtn.disabled = true; testBtn.textContent = "جاري الإرسال...";
-    const res = await callEmailService({ action: "sendTest", apiKey: resendKey, to });
+    const res = await callEmailService({ action: "sendTest", apiKey: resendKey, to, factoryName: state.settings.workshop_name });
     testBtn.disabled = false; testBtn.textContent = "إرسال بريد اختباري";
 
     if (res.error || res.success === false) {
@@ -2356,6 +2356,7 @@ async function callSendTelegram({ type, target, message }) {
 async function notifyStockAlert(itemName, qty, maxQty, unit, pct, level) {
   const results = { email: null, telegram: null };
   const isCritical = level === "critical";
+  const msgType = isCritical ? "critical" : "low";
   if (state.settings.resend_api_key) {
     const col = isCritical ? "notify_critical" : "notify_low";
     const { data: recipientRows } = await sb.from("email_recipients").select("email").eq("is_active", true).eq(col, true);
@@ -2364,10 +2365,11 @@ async function notifyStockAlert(itemName, qty, maxQty, unit, pct, level) {
       try {
         results.email = await callEmailService({
           action: "sendLowStockAlert", apiKey: state.settings.resend_api_key, to: recipients,
-          itemName, qty, maxQty, unit, pct, level,
+          itemName, qty, maxQty, unit, pct, level, factoryName: state.settings.workshop_name,
         });
       } catch (e) { results.email = { error: String(e) }; }
       if (results.email?.error || results.email?.success === false) console.warn("تعذر إرسال تنبيه المخزون بالإيميل:", results.email.reason || results.email.error);
+      logNotification("email", msgType, `${recipients.length} مستلم — ${itemName}`, results.email?.success !== false && !results.email?.error, results.email?.reason || results.email?.error || null);
     }
   }
   if (state.settings.telegram_bot_token) {
@@ -2380,8 +2382,17 @@ async function notifyStockAlert(itemName, qty, maxQty, unit, pct, level) {
       });
     } catch (e) { results.telegram = { error: String(e) }; }
     if (results.telegram?.error) console.warn("تعذر إرسال تنبيه المخزون بتيليجرام:", results.telegram.error);
+    if (results.telegram) {
+      logNotification("telegram", msgType, `${results.telegram.sent ?? 0} نجح / ${results.telegram.failed ?? 0} فشل — ${itemName}`, !results.telegram.error && (results.telegram.sent ?? 0) > 0, results.telegram.error || null);
+    }
   }
   return results;
+}
+// تسجيل أي محاولة إرسال (نجحت أو فشلت) في سجل الإشعارات — لا نوقف العملية الأساسية لو فشل التسجيل نفسه
+async function logNotification(channel, msgType, recipient, success, reason) {
+  try {
+    await sb.from("notification_log").insert({ channel, msg_type: msgType, recipient, success: !!success, reason: reason || null });
+  } catch (e) { /* تجاهل: التسجيل ثانوي ومش لازم يوقف الإرسال الأساسي */ }
 }
 async function callEmailService(payload) {
   try {
@@ -2495,10 +2506,11 @@ function openNewUserModal(main) {
       btn.textContent = "...جارِ إرسال رسالة الترحيب";
       const wres = await callEmailService({
         action: "sendWelcome", apiKey: state.settings.resend_api_key, to: contactEmail,
-        fullName, username, password, roleLabel: roleLabels[role],
+        fullName, username, password, roleLabel: roleLabels[role], factoryName: state.settings.workshop_name,
       });
       if (wres.error || wres.success === false) toast("تم إنشاء الحساب، لكن تعذّر إرسال رسالة الترحيب — " + (wres.reason || wres.error || ""), true);
       else toast(`تم إنشاء الحساب وإرسال رسالة الترحيب إلى ${contactEmail}`);
+      logNotification("email", "welcome", contactEmail, !wres.error && wres.success !== false, wres.reason || wres.error || null);
     } else {
       toast(`تم إنشاء الحساب — اسم المستخدم: ${username}${contactEmail ? " (رسالة الترحيب محتاجة مفتاح Resend في الإعدادات الأول)" : ""}`);
     }
@@ -2512,10 +2524,15 @@ function openNewUserModal(main) {
 /* ---------------- audit log view ---------------- */
 async function renderAudit(main) {
   if (!_auditLoaded) { main.innerHTML = `<div class="empty-note">جاري تحميل سجل الأنشطة...</div>`; await ensureAuditLog(); if (state.tab !== "audit") return; }
+  const { data: notifLog } = await sb.from("notification_log").select("*").order("created_at", { ascending: false }).limit(100);
   main.innerHTML = `
     <div class="section-header"><div><div class="section-title">${t("auditTitle")}</div><div class="section-sub">${t("auditSub")}</div></div></div>
-    <div class="card" style="padding:0; overflow:hidden;">
+    <div class="card" style="padding:0; overflow:hidden; margin-bottom:22px;">
       <table><thead><tr><th>${t("fullNameLabel")}</th><th>${t("actionCol")}</th><th>${t("entityCol")}</th><th>${t("beforeCol")}</th><th>${t("afterCol")}</th><th>${t("deviceLabel")}</th><th>${t("timeCol")}</th></tr></thead><tbody id="audit-body"></tbody></table>
+    </div>
+    <div class="section-header"><div><div class="section-title" style="font-size:16px;">سجل إرسال الإشعارات (إيميل وتيليجرام)</div><div class="section-sub">آخر 100 محاولة إرسال — نجحت أو فشلت ولماذا</div></div></div>
+    <div class="card" style="padding:0; overflow:hidden;">
+      <table><thead><tr><th>القناة</th><th>النوع</th><th>المستلم</th><th>الحالة</th><th>سبب الفشل</th><th>الوقت</th></tr></thead><tbody id="notif-log-body"></tbody></table>
     </div>`;
   $("#audit-body").innerHTML = state.auditLog.length ? state.auditLog.map(a => `
     <tr>
@@ -2527,6 +2544,18 @@ async function renderAudit(main) {
       <td style="color:var(--ink70); font-size:12px;">${a.device || "—"}</td>
       <td class="mono" style="color:var(--ink70); font-size:12px;">${fmtDate(a.created_at)}</td>
     </tr>`).join("") : `<tr><td colspan="7"><div class="empty-note">${t("noAudit")}</div></td></tr>`;
+
+  const msgTypeLabels = { critical: "تنبيه حرج", low: "تنبيه منخفض", daily_report: "التقرير اليومي", welcome: "رسالة ترحيب", test: "اختبار" };
+  const channelLabels = { email: "📧 إيميل", telegram: "✈️ تيليجرام" };
+  $("#notif-log-body").innerHTML = (notifLog && notifLog.length) ? notifLog.map(n => `
+    <tr>
+      <td style="font-weight:700;">${channelLabels[n.channel] || n.channel}</td>
+      <td>${msgTypeLabels[n.msg_type] || n.msg_type}</td>
+      <td style="color:var(--ink70); font-size:12.5px;">${n.recipient}</td>
+      <td>${n.success ? `<span class="pill pill-ok">✓ نجح</span>` : `<span class="pill pill-critical">✗ فشل</span>`}</td>
+      <td style="color:var(--red); font-size:12px;">${n.reason || "—"}</td>
+      <td class="mono" style="color:var(--ink70); font-size:12px;">${fmtDate(n.created_at)}</td>
+    </tr>`).join("") : `<tr><td colspan="6"><div class="empty-note">لا يوجد سجل إرسال بعد.</div></td></tr>`;
 }
 
 function genItemCode(category) {

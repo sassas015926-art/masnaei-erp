@@ -20,6 +20,7 @@ export function wrapEmail(opts: {
   accentColor?: string;
   appUrl?: string;
   ctaLabel?: string;
+  factoryName?: string;
 }) {
   const accent = opts.accentColor || "#17899F";
   const appUrl = opts.appUrl || DEFAULT_APP_URL;
@@ -38,6 +39,7 @@ export function wrapEmail(opts: {
           <img src="${LOGO_URL}" alt="Masnaei ERP" width="210" style="display:block; margin:0 auto; max-width:210px; width:210px; height:auto; border:0;">
         </td></tr>
         <tr><td style="padding:0 28px 18px; text-align:center; border-bottom:1px solid #EEF1F5;">
+          ${opts.factoryName ? `<div style="font-size:13px; font-weight:700; color:#122A4A; margin-bottom:6px;">${opts.factoryName}</div>` : ""}
           <h1 style="margin:0; font-size:19px; color:#122A4A;" dir="rtl">${opts.title}</h1>
         </td></tr>
         <tr><td style="padding:24px 28px; color:#122A4A; font-size:14px; line-height:1.9;" dir="rtl" align="right">

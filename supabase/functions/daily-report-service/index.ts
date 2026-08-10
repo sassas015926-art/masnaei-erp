@@ -179,6 +179,7 @@ Deno.serve(async (req) => {
     const htmlText = wrapEmail({
       title: "📊 تقرير حالة المخزن اليومي",
       ctaLabel: "افتح لوحة التحكم",
+      factoryName: settings.workshop_name || undefined,
       bodyHtml: `
         <p style="color:#8A94A6; margin:0 0 20px; font-size:13px;">${todayLabel} — الساعة ${nowLabel}</p>
         <table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate; border-spacing:8px 0; margin-bottom:22px;">
@@ -251,6 +252,21 @@ Deno.serve(async (req) => {
 
     if (!isManualTest && emailOk && telegramOk) {
       await admin.from("settings").update({ last_daily_report_sent_at: new Date().toISOString() }).eq("id", 1);
+    }
+
+    // تسجيل المحاولة في سجل الإشعارات — يحصل دايمًا (سواء اختبار يدوي أو تلقائي)
+    // بس نتجاهل الحالة اللي مفيش فيها مستلمين أصلًا (مش محاولة حقيقية)
+    if (emailAttempted) {
+      await admin.from("notification_log").insert({
+        channel: "email", msg_type: "daily_report", recipient: `${emailTo.length} مستلم`,
+        success: results.email?.success === true, reason: results.email?.reason || null,
+      });
+    }
+    if (telegramAttempted) {
+      await admin.from("notification_log").insert({
+        channel: "telegram", msg_type: "daily_report", recipient: `${tgChatIds.length} مستلم`,
+        success: results.telegram?.success === true, reason: results.telegram?.reason || null,
+      });
     }
 
     return json({ sent: true, isManualTest, fullySucceeded: emailOk && telegramOk, results });
