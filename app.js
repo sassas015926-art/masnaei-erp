@@ -29,6 +29,7 @@ const ICONS = {
   truck: '<path d="M1 3h13v13H1z"/><path d="M14 8h4l4 4v4h-8V8z"/><circle cx="6" cy="18.5" r="2.5"/><circle cx="17.5" cy="18.5" r="2.5"/>',
   tag: '<path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.24L3 3v6.59a2 2 0 0 0 .59 1.41l9.58 9.59a2 2 0 0 0 2.83 0l4.59-4.59a2 2 0 0 0 0-2.83Z"/><circle cx="7.5" cy="7.5" r="1.2"/>',
   send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+  mail: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/>',
 };
 function icon(name, size = 16) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ""}</svg>`;
@@ -65,7 +66,7 @@ const CATS_FALLBACK = ["أقمشة", "خيوط", "أزرار وسحابات", "�
 const state = {
   user: null, profile: null,
   settings: { workshop_name: "مصنع نسيج", logo_base64: null, alert_threshold_percent: 15, warning_threshold_percent: 30 },
-  categories: [], items: [], transactions: [], profiles: [], auditLog: [], backups: [], suppliers: [], telegramUsers: [],
+  categories: [], items: [], transactions: [], profiles: [], auditLog: [], backups: [], suppliers: [], telegramUsers: [], emailRecipients: [],
   tab: "dashboard", selectedItem: null, pollTimer: null, lang: (localStorage.getItem("lang") || "ar"), reportItemFocus: null,
   _alertOpen: false,
 };
@@ -77,7 +78,7 @@ const I18N = {
     brandSub: "إدارة المخازن",
     navDashboard: "لوحة التحكم", navIn: "إدخال مخزون", navOut: "سحب من المخزن", navStock: "المخزون الحالي",
     navReports: "التقارير", navAudit: "سجل العمليات", navUsers: "إدارة المستخدمين", navSettings: "الإعدادات",
-    navItems: "إدارة الأصناف", navSuppliers: "الموردون", navTelegram: "مستخدمو تيليجرام",
+    navItems: "إدارة الأصناف", navSuppliers: "الموردون", navTelegram: "مستخدمو تيليجرام", navEmailRecipients: "مستلمو الإيميل",
     logout: "خروج",
     // عام
     save: "حفظ", add: "إضافة", delete: "حذف", edit: "تعديل", cancel: "إلغاء", search: "بحث", confirmBtn: "تأكيد",
@@ -143,7 +144,7 @@ const I18N = {
     brandSub: "Depo Yönetimi",
     navDashboard: "Kontrol Paneli", navIn: "Stok Girişi", navOut: "Depodan Çıkış", navStock: "Mevcut Stok",
     navReports: "Raporlar", navAudit: "İşlem Kaydı", navUsers: "Kullanıcı Yönetimi", navSettings: "Ayarlar",
-    navItems: "Ürün Yönetimi", navSuppliers: "Tedarikçiler", navTelegram: "Telegram Kullanıcıları",
+    navItems: "Ürün Yönetimi", navSuppliers: "Tedarikçiler", navTelegram: "Telegram Kullanıcıları", navEmailRecipients: "E-posta Alıcıları",
     logout: "Çıkış",
     // genel
     save: "Kaydet", add: "Ekle", delete: "Sil", edit: "Düzenle", cancel: "İptal", search: "Ara", confirmBtn: "Onayla",
@@ -241,6 +242,7 @@ const TAB_ROLES = {
   suppliers: ["admin", "keeper"],
   users: ["admin"],
   telegram: ["admin"],
+  emailRecipients: ["admin"],
   settings: ["admin"],
 };
 function myRole() { return state.profile?.role || "viewer"; }
@@ -382,10 +384,15 @@ async function loadAll() {
 }
 // تحميل كسول (lazy load): البيانات دي مش لازمة فورًا وقت الدخول، بنجيبها بس أول ما المستخدم
 // يفتح التبويب اللي محتاجها فعليًا — ده بيقلل وقت انتظار تسجيل الدخول بشكل كبير.
-let _profilesLoaded = false, _suppliersLoaded = false, _auditLoaded = false;
+let _profilesLoaded = false, _suppliersLoaded = false, _auditLoaded = false, _emailRecipientsLoaded = false;
 async function ensureProfiles() { if (!_profilesLoaded) { await loadProfiles(); _profilesLoaded = true; } }
 async function ensureSuppliers() { if (!_suppliersLoaded) { await loadSuppliers(); _suppliersLoaded = true; } }
 async function ensureAuditLog() { if (!_auditLoaded) { await loadAuditLog(); _auditLoaded = true; } }
+async function loadEmailRecipients() {
+  const { data } = await sb.from("email_recipients").select("*").order("created_at");
+  state.emailRecipients = data || [];
+}
+async function ensureEmailRecipients() { if (!_emailRecipientsLoaded) { await loadEmailRecipients(); _emailRecipientsLoaded = true; } }
 
 /* ---------------- app boot ---------------- */
 async function boot() {
@@ -484,6 +491,7 @@ const NAV = [
   { id: "suppliers", labelKey: "navSuppliers", icon: "truck" },
   { id: "users", labelKey: "navUsers", icon: "users" },
   { id: "telegram", labelKey: "navTelegram", icon: "send" },
+  { id: "emailRecipients", labelKey: "navEmailRecipients", icon: "mail" },
   { id: "settings", labelKey: "navSettings", icon: "gear" },
 ];
 function renderNav() {
@@ -500,6 +508,7 @@ function renderNav() {
     if (state.tab === "users") await loadProfiles();
     if (state.tab === "suppliers") await loadSuppliers();
     if (state.tab === "telegram") await loadTelegramUsers();
+    if (state.tab === "emailRecipients") await ensureEmailRecipients();
     $("#nav-list").classList.remove("mobile-open");
     $("#mobile-extra-controls").classList.remove("mobile-open");
     render();
@@ -542,6 +551,7 @@ function render() {
   else if (state.tab === "suppliers") renderSuppliers(main);
   else if (state.tab === "users") renderUsers(main);
   else if (state.tab === "telegram") renderTelegramUsers(main);
+  else if (state.tab === "emailRecipients") renderEmailRecipients(main);
   else if (state.tab === "settings") renderSettings(main);
 }
 
@@ -2020,7 +2030,7 @@ async function renderTelegramUsers(main) {
         <table class="table">
           <thead><tr>
             <th>${t("fullNameLabel")}</th><th>Username</th><th>${t("status")}</th>
-            <th>${t("telegramRole")}</th><th>${t("telegramLastSeen")}</th><th></th>
+            <th>${t("telegramRole")}</th><th>حرج</th><th>منخفض</th><th>يومي</th><th>${t("telegramLastSeen")}</th><th></th>
           </tr></thead>
           <tbody>
             ${state.telegramUsers.map(u => `
@@ -2034,6 +2044,9 @@ async function renderTelegramUsers(main) {
                     ${Object.keys(ROLE_LABELS).map(r => `<option value="${r}" ${u.role === r ? "selected" : ""}>${ROLE_LABELS[r]}</option>`).join("")}
                   </select>
                 </td>
+                <td><button class="pill ${u.notify_critical ? "pill-critical" : ""}" data-tg-notify="notify_critical" data-id="${u.id}" style="border:none; cursor:pointer;">${u.notify_critical ? "✓" : "—"}</button></td>
+                <td><button class="pill ${u.notify_low ? "pill-warning" : ""}" data-tg-notify="notify_low" data-id="${u.id}" style="border:none; cursor:pointer;">${u.notify_low ? "✓" : "—"}</button></td>
+                <td><button class="pill ${u.notify_daily_report ? "pill-ok" : ""}" data-tg-notify="notify_daily_report" data-id="${u.id}" style="border:none; cursor:pointer;">${u.notify_daily_report ? "✓" : "—"}</button></td>
                 <td style="white-space:nowrap;">${u.last_seen_at ? fmtDate(u.last_seen_at) : "—"}</td>
                 <td>
                   <button class="icon-btn" data-tg-toggle="${u.id}" data-active="${u.is_active}" title="${u.is_active ? t("telegramBlocked") : t("telegramActive")}">${icon(u.is_active ? "x" : "check", 14)}</button>
@@ -2072,6 +2085,15 @@ async function renderTelegramUsers(main) {
     toast("تم تحديث الدور");
   });
 
+  $$("[data-tg-notify]").forEach(btn => btn.onclick = async () => {
+    const id = btn.dataset.id, col = btn.dataset.tgNotify;
+    const u = state.telegramUsers.find(x => x.id === id);
+    const { error } = await sb.from("telegram_users").update({ [col]: !u[col] }).eq("id", id);
+    if (error) { toast("تعذر التحديث — " + error.message, true); return; }
+    u[col] = !u[col];
+    renderTelegramUsers(main);
+  });
+
   $$("[data-tg-toggle]").forEach(btn => btn.onclick = async () => {
     const id = btn.dataset.tgToggle;
     const isActive = btn.dataset.active === "true";
@@ -2088,6 +2110,88 @@ async function renderTelegramUsers(main) {
     btn.disabled = false; btn.innerHTML = `${icon("send", 14)} ${t("telegramSendTest")}`;
     if (res.error) { toast("فشل الإرسال — " + res.error, true); return; }
     toast(`تم الإرسال: ${res.sent} نجح، ${res.failed} فشل، ${res.blocked} محظور (من إجمالي ${res.total})`);
+  };
+}
+
+/* ---------------- شاشة إدارة مستلمي الإيميل (للمدير فقط) ---------------- */
+function renderEmailRecipients(main) {
+  main.innerHTML = `
+    <div class="section-header">
+      <div><div class="section-title">مستلمو الإيميل</div><div class="section-sub">حدّد لكل إيميل بالضبط أي نوع رسائل يوصله</div></div>
+    </div>
+    <div class="card" style="margin-bottom:18px; max-width:640px;">
+      <div class="card-title">${icon("plus", 16)} إضافة مستلم جديد</div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <div class="field" style="flex:1; min-width:160px;"><label>الاسم (اختياري)</label><input id="er-name" class="input" style="width:100%;" placeholder="مثال: أحمد محمد"></div>
+        <div class="field" style="flex:1; min-width:200px;"><label>البريد الإلكتروني</label><input id="er-email" type="email" class="input" style="width:100%;" placeholder="example@domain.com"></div>
+      </div>
+      <div style="display:flex; gap:18px; flex-wrap:wrap; margin:10px 0 16px;">
+        <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" id="er-critical" checked> تنبيه مخزون حرج</label>
+        <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" id="er-low" checked> تنبيه مخزون منخفض</label>
+        <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" id="er-daily" checked> التقرير اليومي</label>
+      </div>
+      <button class="btn-dark" id="er-add">${icon("plus", 14)} إضافة المستلم</button>
+    </div>
+    <div class="card" style="padding:0; overflow:hidden;">
+      <table><thead><tr><th>الاسم</th><th>الإيميل</th><th>حرج</th><th>منخفض</th><th>التقرير اليومي</th><th>الحالة</th><th></th></tr></thead><tbody id="er-body"></tbody></table>
+    </div>`;
+
+  const draw = () => {
+    $("#er-body").innerHTML = state.emailRecipients.length ? state.emailRecipients.map(r => `
+      <tr>
+        <td style="font-weight:700;">${r.name || "—"}</td>
+        <td class="mono" style="color:var(--ink70);">${r.email}</td>
+        <td><button class="pill ${r.notify_critical ? "pill-critical" : ""}" data-toggle-col="notify_critical" data-id="${r.id}" style="border:none; cursor:pointer;">${r.notify_critical ? "✓ مفعّل" : "متوقف"}</button></td>
+        <td><button class="pill ${r.notify_low ? "pill-warning" : ""}" data-toggle-col="notify_low" data-id="${r.id}" style="border:none; cursor:pointer;">${r.notify_low ? "✓ مفعّل" : "متوقف"}</button></td>
+        <td><button class="pill ${r.notify_daily_report ? "pill-ok" : ""}" data-toggle-col="notify_daily_report" data-id="${r.id}" style="border:none; cursor:pointer;">${r.notify_daily_report ? "✓ مفعّل" : "متوقف"}</button></td>
+        <td><button data-toggle-active="${r.id}" class="pill ${r.is_active ? "pill-ok" : "pill-critical"}" style="border:none; cursor:pointer;">${r.is_active ? "نشط" : "موقوف"}</button></td>
+        <td><button class="icon-btn" style="color:var(--red);" data-del="${r.id}">${icon("trash", 13)}</button></td>
+      </tr>`).join("") : `<tr><td colspan="7"><div class="empty-note">لا يوجد مستلمون بعد.</div></td></tr>`;
+
+    $$("[data-toggle-col]").forEach(b => b.onclick = async () => {
+      const id = b.dataset.id, col = b.dataset.toggleCol;
+      const r = state.emailRecipients.find(x => x.id === id);
+      const { error } = await sb.from("email_recipients").update({ [col]: !r[col] }).eq("id", id);
+      if (error) { toast("تعذر التحديث", true); return; }
+      r[col] = !r[col];
+      draw();
+    });
+    $$("[data-toggle-active]").forEach(b => b.onclick = async () => {
+      const id = b.dataset.toggleActive;
+      const r = state.emailRecipients.find(x => x.id === id);
+      const { error } = await sb.from("email_recipients").update({ is_active: !r.is_active }).eq("id", id);
+      if (error) { toast("تعذر التحديث", true); return; }
+      r.is_active = !r.is_active;
+      draw();
+    });
+    $$("[data-del]").forEach(b => b.onclick = async () => {
+      const r = state.emailRecipients.find(x => x.id === b.dataset.del);
+      if (!confirm(`حذف "${r.email}" من قائمة المستلمين؟`)) return;
+      const { error } = await sb.from("email_recipients").delete().eq("id", r.id);
+      if (error) { toast("تعذر الحذف", true); return; }
+      state.emailRecipients = state.emailRecipients.filter(x => x.id !== r.id);
+      draw();
+      toast("تم الحذف");
+    });
+  };
+  draw();
+
+  $("#er-add").onclick = async () => {
+    const name = $("#er-name").value.trim();
+    const email = $("#er-email").value.trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast("أدخل بريد إلكتروني صحيح", true); return; }
+    const payload = {
+      name: name || null, email,
+      notify_critical: $("#er-critical").checked,
+      notify_low: $("#er-low").checked,
+      notify_daily_report: $("#er-daily").checked,
+    };
+    const { data, error } = await sb.from("email_recipients").insert(payload).select().single();
+    if (error) { toast(error.message.includes("duplicate") ? "هذا الإيميل مضاف بالفعل" : "تعذر الإضافة — " + error.message, true); return; }
+    state.emailRecipients.push(data);
+    $("#er-name").value = ""; $("#er-email").value = "";
+    draw();
+    toast("تمت إضافة المستلم");
   };
 }
 
