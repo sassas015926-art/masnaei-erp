@@ -1212,7 +1212,9 @@ function renderSettings(main) {
     <div class="card" style="margin-bottom:18px; max-width:560px;">
       <div class="card-title" style="margin-bottom:6px;">${icon("alert", 17)} إشعارات المخزون المنخفض (إيميل وتليجرام)</div>
       <div style="font-size:11.5px; color:var(--ink70); margin-bottom:14px;">لما أي صنف يوصل لمستوى منخفض أو حرج، النظام يبعت إشعار تلقائي فورًا. الخطوات الكاملة لإنشاء المفاتيح موجودة في ملف <code>migration_notifications.sql</code>.</div>
-      <div class="field"><label>إيميلات الإشعارات (مفصولة بفاصلة)</label><input id="ws-emails" class="input" style="width:100%;" value="${state.settings.notify_emails || ""}" placeholder="admin@example.com, manager@example.com"></div>
+      <div class="field" style="background:var(--paper); border-radius:10px; padding:12px; font-size:12.5px; color:var(--ink70);">
+        ${icon("check", 13)} إدارة مستلمي التنبيهات والتقرير اليومي بقت من تبويب "${t("navEmailRecipients")}" — تقدر تحدد فيه بالظبط أي نوع رسائل يوصل لكل إيميل.
+      </div>
       <div class="field">
         <label>مفتاح Resend (لإرسال الإيميلات)</label>
         <input id="ws-resend" class="input" style="width:100%;" value="${state.settings.resend_api_key || ""}" placeholder="re_xxxxxxxx">
@@ -1221,7 +1223,7 @@ function renderSettings(main) {
       <div class="field" style="background:var(--paper); border-radius:10px; padding:12px;">
         <label>اختبار إرسال بريد إلكتروني حقيقي</label>
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">
-          <input id="ws-test-email-to" class="input" style="flex:1; min-width:200px;" value="${(state.settings.notify_emails || "").split(",")[0].trim()}" placeholder="ابعت الاختبار على إيميل إيه؟ مثال: you@example.com">
+          <input id="ws-test-email-to" class="input" style="flex:1; min-width:200px;" placeholder="ابعت الاختبار على إيميل إيه؟ مثال: you@example.com">
           <button class="btn-dark" id="ws-test-email" type="button">${icon("alert", 14)} إرسال بريد اختباري</button>
         </div>
         <div id="test-email-status" style="font-size:12px; margin-top:8px; min-height:16px;"></div>
@@ -1346,7 +1348,6 @@ function renderSettings(main) {
     }
 
     const payload = {
-      notify_emails: $("#ws-emails").value.trim(),
       resend_api_key: resendKey,
       telegram_bot_token: tgToken,
       telegram_webhook_secret: tgWebhookSecret,
@@ -2145,7 +2146,10 @@ function renderEmailRecipients(main) {
         <td><button class="pill ${r.notify_low ? "pill-warning" : ""}" data-toggle-col="notify_low" data-id="${r.id}" style="border:none; cursor:pointer;">${r.notify_low ? "✓ مفعّل" : "متوقف"}</button></td>
         <td><button class="pill ${r.notify_daily_report ? "pill-ok" : ""}" data-toggle-col="notify_daily_report" data-id="${r.id}" style="border:none; cursor:pointer;">${r.notify_daily_report ? "✓ مفعّل" : "متوقف"}</button></td>
         <td><button data-toggle-active="${r.id}" class="pill ${r.is_active ? "pill-ok" : "pill-critical"}" style="border:none; cursor:pointer;">${r.is_active ? "نشط" : "موقوف"}</button></td>
-        <td><button class="icon-btn" style="color:var(--red);" data-del="${r.id}">${icon("trash", 13)}</button></td>
+        <td><div style="display:flex; gap:6px; justify-content:flex-end;">
+          <button class="icon-btn" data-edit-er="${r.id}">${icon("pencil", 13)}</button>
+          <button class="icon-btn" style="color:var(--red);" data-del="${r.id}">${icon("trash", 13)}</button>
+        </div></td>
       </tr>`).join("") : `<tr><td colspan="7"><div class="empty-note">لا يوجد مستلمون بعد.</div></td></tr>`;
 
     $$("[data-toggle-col]").forEach(b => b.onclick = async () => {
@@ -2164,6 +2168,7 @@ function renderEmailRecipients(main) {
       r.is_active = !r.is_active;
       draw();
     });
+    $$("[data-edit-er]").forEach(b => b.onclick = () => openEditEmailRecipientModal(state.emailRecipients.find(x => x.id === b.dataset.editEr), draw));
     $$("[data-del]").forEach(b => b.onclick = async () => {
       const r = state.emailRecipients.find(x => x.id === b.dataset.del);
       if (!confirm(`حذف "${r.email}" من قائمة المستلمين؟`)) return;
@@ -2195,6 +2200,35 @@ function renderEmailRecipients(main) {
   };
 }
 
+function openEditEmailRecipientModal(r, onDone) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <div style="font-weight:800; font-size:16px;">${icon("pencil", 16)} تعديل بيانات المستلم</div>
+        <button class="close-x" id="eer-close">${icon("x", 15)}</button>
+      </div>
+      <div class="field"><label>الاسم (اختياري)</label><input id="eer-name" class="input" style="width:100%;" value="${r.name || ""}"></div>
+      <div class="field"><label>البريد الإلكتروني</label><input id="eer-email" type="email" class="input" style="width:100%;" value="${r.email}"></div>
+      <button class="btn-primary" id="eer-save">${t("save")}</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  $("#eer-close", overlay).onclick = () => overlay.remove();
+  $("#eer-save", overlay).onclick = async () => {
+    const name = $("#eer-name", overlay).value.trim();
+    const email = $("#eer-email", overlay).value.trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast("أدخل بريد إلكتروني صحيح", true); return; }
+    const { error } = await sb.from("email_recipients").update({ name: name || null, email }).eq("id", r.id);
+    if (error) { toast(error.message.includes("duplicate") ? "هذا الإيميل مستخدم بالفعل لمستلم آخر" : "تعذر الحفظ", true); return; }
+    r.name = name || null; r.email = email;
+    overlay.remove();
+    if (typeof onDone === "function") onDone();
+    toast("تم تحديث بيانات المستلم");
+  };
+}
+
 /* ---------------- user management (admin only) ---------------- */
 async function renderUsers(main) {
   if (!_profilesLoaded) { main.innerHTML = `<div class="empty-note">جاري تحميل بيانات المستخدمين...</div>`; await ensureProfiles(); if (state.tab !== "users") return; }
@@ -2205,11 +2239,12 @@ async function renderUsers(main) {
       <button class="btn-dark" id="new-user-btn">${icon("plus", 15)} ${t("newUserBtn")}</button>
     </div>
     <div class="card" style="padding:0; overflow:hidden;">
-      <table><thead><tr><th>${t("fullNameLabel")}</th><th>${t("roleLabel")}</th><th>${t("status")}</th><th>${t("lastLogin")}</th><th>${t("deviceLabel")}</th><th></th></tr></thead><tbody id="users-body"></tbody></table>
+      <table><thead><tr><th>${t("fullNameLabel")}</th><th>البريد الإلكتروني</th><th>${t("roleLabel")}</th><th>${t("status")}</th><th>${t("lastLogin")}</th><th>${t("deviceLabel")}</th><th></th></tr></thead><tbody id="users-body"></tbody></table>
     </div>`;
   $("#users-body").innerHTML = state.profiles.map(p => `
     <tr>
       <td style="font-weight:700;">${p.full_name || "—"}${p.id === state.user.id ? ` <span style="color:var(--ink50); font-size:11px;">${t("youLabel")}</span>` : ""}</td>
+      <td style="color:var(--ink70); font-size:12.5px;">${p.contact_email || "—"}</td>
       <td>
         <select class="input" style="padding:6px 10px; font-size:12.5px;" data-role="${p.id}" ${p.id === state.user.id ? "disabled" : ""}>
           ${Object.entries(roleLabels).map(([val, label]) => `<option value="${val}" ${p.role === val ? "selected" : ""}>${label}</option>`).join("")}
@@ -2243,8 +2278,13 @@ async function renderUsers(main) {
     logAudit({ action: "حذف حساب مستخدم نهائيًا", entity: "user", entityName: p.full_name });
     await loadProfiles(); renderUsers(main); toast("تم حذف الحساب نهائيًا");
   });
-  $$("[data-edit-user]").forEach(btn => btn.onclick = () => {
-    openEditUserModal(state.profiles.find(x => x.id === btn.dataset.editUser), main);
+  $$("[data-edit-user]").forEach(btn => btn.onclick = async () => {
+    const p = state.profiles.find(x => x.id === btn.dataset.editUser);
+    if (p.contact_email) {
+      const { data } = await sb.from("email_recipients").select("notify_critical, notify_low, notify_daily_report").eq("email", p.contact_email).maybeSingle();
+      p._emailRecipient = data || null;
+    }
+    openEditUserModal(p, main);
   });
   $$("[data-reset-pass]").forEach(btn => btn.onclick = () => {
     openResetPasswordModal(state.profiles.find(x => x.id === btn.dataset.resetPass), main);
@@ -2381,7 +2421,15 @@ function openNewUserModal(main) {
       <div class="field">
         <label>البريد الإلكتروني للتواصل (اختياري)</label>
         <input id="nu-email" type="email" class="input" style="width:100%;" placeholder="example@domain.com">
-        <div style="font-size:11px; color:var(--ink70); margin-top:4px;">لو اتملى، هيتولّد اسم مستخدم وكلمة مرور تلقائيًا وتتبعت له رسالة ترحيب فيها بيانات دخوله.</div>
+        <div style="font-size:11px; color:var(--ink70); margin-top:4px;">لو اتملى، هيتولّد اسم مستخدم وكلمة مرور تلقائيًا وتتبعت له رسالة ترحيب فيها بيانات دخوله، وهيتضاف تلقائيًا في صفحة "مستلمي الإيميل".</div>
+      </div>
+      <div class="field" id="nu-notify-wrap" style="background:var(--paper); border-radius:10px; padding:12px; display:none;">
+        <label style="margin-bottom:8px;">أي تنبيهات توصله على الإيميل؟</label>
+        <div style="display:flex; gap:18px; flex-wrap:wrap;">
+          <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" id="nu-notify-critical" checked> تنبيه مخزون حرج</label>
+          <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" id="nu-notify-low" checked> تنبيه مخزون منخفض</label>
+          <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" id="nu-notify-daily" checked> التقرير اليومي</label>
+        </div>
       </div>
       <div style="display:flex; gap:10px;">
         <div class="field" style="flex:1;"><label>${t("usernameLabel")}</label><input id="nu-username" class="input" style="width:100%;" placeholder="مثال: sara"></div>
@@ -2402,6 +2450,9 @@ function openNewUserModal(main) {
   $("#nu-generate", overlay).onclick = () => {
     $("#nu-username", overlay).value = genSuggestedUsername();
     $("#nu-password", overlay).value = genRandomPassword();
+  };
+  $("#nu-email", overlay).oninput = () => {
+    $("#nu-notify-wrap", overlay).style.display = $("#nu-email", overlay).value.trim() ? "block" : "none";
   };
 
   $("#nu-save", overlay).onclick = async () => {
@@ -2427,6 +2478,17 @@ function openNewUserModal(main) {
     if (contactEmail) { profileUpdate.contact_email = contactEmail; profileUpdate.must_change_password = true; }
     if (newUserId) await sb.from("profiles").update(profileUpdate).eq("id", newUserId);
     logAudit({ action: "إنشاء حساب مستخدم", entity: "user", entityName: fullName || username, details: `الدور: ${roleLabels[role]}` });
+
+    // مزامنة تلقائية مع "مستلمي الإيميل" — بدل ما يضاف يدويًا مرة تانية من صفحة تانية
+    if (contactEmail) {
+      const { error: syncErr } = await sb.from("email_recipients").upsert({
+        email: contactEmail, name: fullName, user_id: newUserId,
+        notify_critical: $("#nu-notify-critical", overlay).checked,
+        notify_low: $("#nu-notify-low", overlay).checked,
+        notify_daily_report: $("#nu-notify-daily", overlay).checked,
+      }, { onConflict: "email" });
+      if (syncErr) console.warn("تعذر مزامنة مستلم الإيميل:", syncErr.message);
+    }
 
     // إرسال رسالة الترحيب لو فيه بريد تواصل، ومفتاح Resend متظبط
     if (contactEmail && state.settings.resend_api_key) {
@@ -2717,6 +2779,18 @@ function openEditUserModal(p, main) {
         <input id="eu-username" class="input" style="width:100%;" value="${(p.username || "")}" placeholder="مثال: ahmed">
         <div style="font-size:11px; color:var(--ink50); margin-top:6px;">بالإنجليزي وبدون مسافات. تغييره يحتاج إعادة نشر Edge Function (راجع README).</div>
       </div>
+      <div class="field">
+        <label>البريد الإلكتروني للتواصل (اختياري)</label>
+        <input id="eu-email" type="email" class="input" style="width:100%;" value="${p.contact_email || ""}" placeholder="example@domain.com">
+      </div>
+      <div class="field" style="background:var(--paper); border-radius:10px; padding:12px;">
+        <label style="margin-bottom:8px;">أي تنبيهات توصله على الإيميل؟ (لو فيه بريد إلكتروني)</label>
+        <div style="display:flex; gap:18px; flex-wrap:wrap;">
+          <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" id="eu-notify-critical" ${p._emailRecipient?.notify_critical !== false ? "checked" : ""}> تنبيه مخزون حرج</label>
+          <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" id="eu-notify-low" ${p._emailRecipient?.notify_low !== false ? "checked" : ""}> تنبيه مخزون منخفض</label>
+          <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" id="eu-notify-daily" ${p._emailRecipient?.notify_daily_report !== false ? "checked" : ""}> التقرير اليومي</label>
+        </div>
+      </div>
       <button class="btn-primary" id="eu-save">حفظ التعديلات</button>
     </div>`;
   document.body.appendChild(overlay);
@@ -2725,15 +2799,27 @@ function openEditUserModal(p, main) {
   $("#eu-save", overlay).onclick = async () => {
     const newName = $("#eu-fullname", overlay).value.trim();
     const newUsername = $("#eu-username", overlay).value.trim().toLowerCase();
+    const contactEmail = $("#eu-email", overlay).value.trim();
     if (!newName) { toast("اكتب الاسم الكامل", true); return; }
+    if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) { toast("البريد الإلكتروني غير صحيح", true); return; }
     const btn = $("#eu-save", overlay); btn.disabled = true; btn.textContent = "جاري الحفظ...";
-    if (newName !== p.full_name) {
-      const { error } = await sb.from("profiles").update({ full_name: newName }).eq("id", p.id);
-      if (error) { toast("تعذر تحديث الاسم — " + (error.message || ""), true); btn.disabled = false; btn.textContent = "حفظ التعديلات"; return; }
+    if (newName !== p.full_name || contactEmail !== (p.contact_email || "")) {
+      const { error } = await sb.from("profiles").update({ full_name: newName, contact_email: contactEmail || null }).eq("id", p.id);
+      if (error) { toast("تعذر تحديث البيانات — " + (error.message || ""), true); btn.disabled = false; btn.textContent = "حفظ التعديلات"; return; }
     }
     if (newUsername && newUsername !== (p.username || "") && /^[a-z0-9._-]+$/.test(newUsername)) {
       const res = await callManageUsers({ action: "updateUsername", userId: p.id, newUsername });
       if (res.error) { toast(res.error, true); btn.disabled = false; btn.textContent = "حفظ التعديلات"; return; }
+    }
+    // مزامنة تلقائية مع "مستلمي الإيميل" لو فيه بريد إلكتروني
+    if (contactEmail) {
+      const { error: syncErr } = await sb.from("email_recipients").upsert({
+        email: contactEmail, name: newName, user_id: p.id,
+        notify_critical: $("#eu-notify-critical", overlay).checked,
+        notify_low: $("#eu-notify-low", overlay).checked,
+        notify_daily_report: $("#eu-notify-daily", overlay).checked,
+      }, { onConflict: "email" });
+      if (syncErr) console.warn("تعذر مزامنة مستلم الإيميل:", syncErr.message);
     }
     logAudit({ action: "تعديل بيانات مستخدم", entity: "user", entityName: newName });
     await loadProfiles(); renderUsers(main); overlay.remove();
