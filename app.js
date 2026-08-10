@@ -2359,6 +2359,14 @@ async function callEmailService(payload) {
   }
 }
 
+function genRandomPassword() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(10));
+  return Array.from(bytes, b => chars[b % chars.length]).join("");
+}
+function genSuggestedUsername() {
+  return "user" + Math.floor(1000 + Math.random() * 9000);
+}
 function openNewUserModal(main) {
   const roleLabels = ROLE_LABELS;
   const overlay = document.createElement("div");
@@ -2369,9 +2377,17 @@ function openNewUserModal(main) {
         <div style="font-weight:800; font-size:16px;">${t("newUserBtn")}</div>
         <button class="close-x" id="nu-close">${icon("x", 15)}</button>
       </div>
-      <div class="field"><label>${t("usernameLabel")}</label><input id="nu-username" class="input" style="width:100%;" placeholder="مثال: sara"></div>
       <div class="field"><label>${t("fullNameLabel")}</label><input id="nu-fullname" class="input" style="width:100%;" placeholder="مثال: سارة أحمد"></div>
-      <div class="field"><label>${t("passwordLabel")}</label><input id="nu-password" type="password" class="input" style="width:100%;" placeholder="6 أحرف على الأقل"></div>
+      <div class="field">
+        <label>البريد الإلكتروني للتواصل (اختياري)</label>
+        <input id="nu-email" type="email" class="input" style="width:100%;" placeholder="example@domain.com">
+        <div style="font-size:11px; color:var(--ink70); margin-top:4px;">لو اتملى، هيتولّد اسم مستخدم وكلمة مرور تلقائيًا وتتبعت له رسالة ترحيب فيها بيانات دخوله.</div>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <div class="field" style="flex:1;"><label>${t("usernameLabel")}</label><input id="nu-username" class="input" style="width:100%;" placeholder="مثال: sara"></div>
+        <div class="field" style="flex:1;"><label>${t("passwordLabel")}</label><input id="nu-password" class="input mono" style="width:100%;" placeholder="6 أحرف على الأقل"></div>
+      </div>
+      <button type="button" class="btn-dark" id="nu-generate" style="margin-bottom:16px;">${icon("key", 14)} توليد اسم مستخدم وكلمة مرور تلقائيًا</button>
       <div class="field"><label>${t("roleLabel")}</label>
         <select id="nu-role" class="input" style="width:100%;">
           ${Object.entries(roleLabels).map(([val, label]) => `<option value="${val}" ${val === "keeper" ? "selected" : ""}>${label}</option>`).join("")}
@@ -2382,23 +2398,52 @@ function openNewUserModal(main) {
   document.body.appendChild(overlay);
   overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
   $("#nu-close", overlay).onclick = () => overlay.remove();
+
+  $("#nu-generate", overlay).onclick = () => {
+    $("#nu-username", overlay).value = genSuggestedUsername();
+    $("#nu-password", overlay).value = genRandomPassword();
+  };
+
   $("#nu-save", overlay).onclick = async () => {
-    const username = $("#nu-username", overlay).value.trim().toLowerCase();
+    const contactEmail = $("#nu-email", overlay).value.trim();
+    let username = $("#nu-username", overlay).value.trim().toLowerCase();
+    let password = $("#nu-password", overlay).value;
     const fullName = $("#nu-fullname", overlay).value.trim();
-    const password = $("#nu-password", overlay).value;
     const role = $("#nu-role", overlay).value;
-    if (!username || !/^[a-z0-9._-]+$/.test(username)) { toast("اسم المستخدم لازم يكون بالإنجليزي بدون مسافات", true); return; }
+    if (!fullName) { toast("اكتب الاسم الكامل", true); return; }
+    // لو مفيش اسم مستخدم/كلمة مرور مكتوبين يدويًا، ولّدهم تلقائيًا (مفيد خصوصًا لو هتُبعت رسالة ترحيب)
+    if (!username) username = genSuggestedUsername();
+    if (!password) password = genRandomPassword();
+    if (!/^[a-z0-9._-]+$/.test(username)) { toast("اسم المستخدم لازم يكون بالإنجليزي بدون مسافات", true); return; }
     if (password.length < 6) { toast("كلمة المرور لازم تكون 6 أحرف على الأقل", true); return; }
+    if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) { toast("البريد الإلكتروني غير صحيح", true); return; }
+
     const email = username + USERNAME_SUFFIX;
     const btn = $("#nu-save", overlay); btn.disabled = true; btn.textContent = "...جارِ الإنشاء";
     const res = await callManageUsers({ action: "create", email, password, fullName, role });
-    btn.disabled = false; btn.textContent = "إنشاء الحساب";
-    if (res.error) { toast(res.error, true); return; }
+    if (res.error) { btn.disabled = false; btn.textContent = "إنشاء الحساب"; toast(res.error, true); return; }
     const newUserId = res.userId || res.user?.id || res.id;
-    if (newUserId) await sb.from("profiles").update({ username }).eq("id", newUserId);
+    const profileUpdate = { username };
+    if (contactEmail) { profileUpdate.contact_email = contactEmail; profileUpdate.must_change_password = true; }
+    if (newUserId) await sb.from("profiles").update(profileUpdate).eq("id", newUserId);
     logAudit({ action: "إنشاء حساب مستخدم", entity: "user", entityName: fullName || username, details: `الدور: ${roleLabels[role]}` });
+
+    // إرسال رسالة الترحيب لو فيه بريد تواصل، ومفتاح Resend متظبط
+    if (contactEmail && state.settings.resend_api_key) {
+      btn.textContent = "...جارِ إرسال رسالة الترحيب";
+      const wres = await callEmailService({
+        action: "sendWelcome", apiKey: state.settings.resend_api_key, to: contactEmail,
+        fullName, username, password, roleLabel: roleLabels[role],
+      });
+      if (wres.error || wres.success === false) toast("تم إنشاء الحساب، لكن تعذّر إرسال رسالة الترحيب — " + (wres.reason || wres.error || ""), true);
+      else toast(`تم إنشاء الحساب وإرسال رسالة الترحيب إلى ${contactEmail}`);
+    } else {
+      toast(`تم إنشاء الحساب — اسم المستخدم: ${username}${contactEmail ? " (رسالة الترحيب محتاجة مفتاح Resend في الإعدادات الأول)" : ""}`);
+    }
+
+    btn.disabled = false; btn.textContent = "إنشاء الحساب";
     overlay.remove();
-    await loadProfiles(); renderUsers(main); toast(`تم إنشاء الحساب — اسم المستخدم: ${username}`);
+    await loadProfiles(); renderUsers(main);
   };
 }
 

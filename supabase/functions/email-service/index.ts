@@ -233,6 +233,55 @@ if (action === "validate") {
       });
     }
 
+    if (action === "sendWelcome") {
+      const { to, fullName, username, password, roleLabel } = body;
+
+      if (!to || typeof to !== "string") {
+        return json({ error: "البريد الإلكتروني ناقص" }, 400);
+      }
+
+      const r = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: DEFAULT_FROM,
+          to: [to],
+          subject: `أهلًا بيك في Masnaei ERP 👋`,
+          html: wrapEmail({
+            title: "🎉 حسابك جاهز",
+            ctaLabel: "افتح النظام الآن",
+            bodyHtml: `
+              <p>أهلًا ${fullName || ""} 👋</p>
+              <p>تم إنشاء حسابك في نظام إدارة المخازن${roleLabel ? ` بدور "${roleLabel}"` : ""}. دي بيانات الدخول بتاعتك:</p>
+              <table role="presentation" dir="rtl" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px; border-collapse:collapse; border:1px solid #E5EAF1; margin:14px 0;">
+                <tr><td style="padding:10px 12px; color:#8A94A6; width:140px; border:1px solid #E5EAF1;">اسم المستخدم</td><td style="padding:10px 12px; font-weight:800; border:1px solid #E5EAF1;" class="mono">${username}</td></tr>
+                <tr><td style="padding:10px 12px; color:#8A94A6; border:1px solid #E5EAF1;">كلمة المرور</td><td style="padding:10px 12px; font-weight:800; border:1px solid #E5EAF1;" class="mono">${password}</td></tr>
+              </table>
+              <div style="background:#FBF1E2; border-right:4px solid #B87A28; padding:10px 14px; border-radius:8px; font-size:12.5px; color:#8A5A1E;">
+                سيُطلب منك تغيير كلمة المرور دي إلى كلمة خاصة بيك أول ما تسجّل دخولك، للحفاظ على أمان حسابك.
+              </div>
+            `,
+          }),
+        }),
+      });
+
+      const respBody: any = await r.json().catch(() => ({}));
+
+      if (!r.ok) {
+        return json({
+          success: false,
+          reason: respBody.message || `فشل الإرسال (كود ${r.status})`,
+        });
+      }
+
+      return json({
+        success: true,
+      });
+    }
+
     return json({ error: "عملية غير معروفة" }, 400);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
