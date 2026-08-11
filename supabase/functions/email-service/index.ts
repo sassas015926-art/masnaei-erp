@@ -101,18 +101,13 @@ Deno.serve(async (req) => {
       );
     }
 if (action === "validate") {
-  const r = await fetch("https://api.resend.com/emails", {
-    method: "POST",
+  // التحقق من صحة المفتاح بدون إرسال أي رسالة فعلية لأي حد — بنستخدم نقطة
+  // نهاية خفيفة (قائمة النطاقات) بترجع 401/403 لو المفتاح غلط، و200 لو صحيح
+  const r = await fetch("https://api.resend.com/domains", {
+    method: "GET",
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      from: DEFAULT_FROM,
-      to: ["sassas015926@gmail.com"],
-      subject: "اختبار صلاحية مفتاح Resend",
-      html: "<p>تم التحقق من مفتاح Resend بنجاح</p>",
-    }),
   });
 
   if (r.status === 401 || r.status === 403) {

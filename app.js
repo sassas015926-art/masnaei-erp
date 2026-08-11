@@ -406,7 +406,15 @@ async function boot() {
 
     if (session) {
       state.user = session.user;
-      await loadAll();
+      // فشل مؤقت في تحميل البيانات (شبكة بطيئة، استعلام فشل مرة واحدة، إلخ)
+      // لازم ما يوديش لتسجيل خروج المستخدم — الجلسة نفسها سليمة، بس البيانات
+      // ممكن تكون ناقصة مؤقتًا. هنعرض التطبيق برضه ونعرض تنبيه بسيط بدل ما نطرده لشاشة الدخول.
+      try {
+        await loadAll();
+      } catch (loadErr) {
+        console.error("boot: فشل تحميل بعض البيانات، لكن الجلسة سليمة:", loadErr);
+        toast("تعذّر تحميل بعض البيانات — جرّب تحديث الصفحة لو حسّيت بنقص", true);
+      }
 
       if (state.profile && state.profile.is_active === false) {
         await sb.auth.signOut();
@@ -2950,28 +2958,24 @@ function openForgotPasswordModal() {
   $("#fp-close", overlay).onclick = () => overlay.remove();
 }
 
-/* ---------------- منع تسجيل الدخول المتكرر (حماية بسيطة من محاولات القوة الغاشمة) ---------------- */
-const LOGIN_LOCK_KEY = "login-lock-";
-const MAX_ATTEMPTS = 5, LOCK_MINUTES = 5;
-function getLoginLock(username) {
-  try { return JSON.parse(localStorage.getItem(LOGIN_LOCK_KEY + username) || "null"); } catch (e) { return null; }
-}
-function setLoginLock(username, data) { localStorage.setItem(LOGIN_LOCK_KEY + username, JSON.stringify(data)); }
-function checkLoginLock(username) {
-  const lock = getLoginLock(username);
-  if (lock && lock.lockUntil && Date.now() < lock.lockUntil) {
-    const mins = Math.ceil((lock.lockUntil - Date.now()) / 60000);
-    return `تم إيقاف تسجيل الدخول مؤقتًا بعد محاولات فاشلة متكررة. حاول بعد ${mins} دقيقة.`;
-  }
+/* ---------------- منع تسجيل الدخول المتكرر (حماية حقيقية من السيرفر عبر RPC) ---------------- */
+async function checkLoginLock(username) {
+  try {
+    const { data } = await sb.rpc("check_login_lock", { p_username: username });
+    const row = Array.isArray(data) ? data[0] : data;
+    if (row && row.locked && row.locked_until) {
+      const mins = Math.ceil((new Date(row.locked_until).getTime() - Date.now()) / 60000);
+      return `تم إيقاف تسجيل الدخول مؤقتًا بعد محاولات فاشلة متكررة. حاول بعد ${Math.max(1, mins)} دقيقة.`;
+    }
+  } catch (e) { /* لو فشل الاتصال بالحماية نفسها، منمنعش المستخدم من المحاولة */ }
   return null;
 }
-function recordLoginFailure(username) {
-  const lock = getLoginLock(username) || { count: 0 };
-  lock.count = (lock.count || 0) + 1;
-  if (lock.count >= MAX_ATTEMPTS) { lock.lockUntil = Date.now() + LOCK_MINUTES * 60000; lock.count = 0; }
-  setLoginLock(username, lock);
+async function recordLoginFailure(username) {
+  try { await sb.rpc("record_login_failure", { p_username: username }); } catch (e) {}
 }
-function clearLoginFailures(username) { localStorage.removeItem(LOGIN_LOCK_KEY + username); }
+async function clearLoginFailures(username) {
+  try { await sb.rpc("clear_login_failures", { p_username: username }); } catch (e) {}
+}
 document.addEventListener("DOMContentLoaded", () => {
   document.documentElement.dir = I18N[state.lang].dir;
   document.documentElement.lang = state.lang;
@@ -2983,7 +2987,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const username = $("#login-username").value.trim();
     const password = $("#login-password").value;
     $("#login-error").classList.add("hidden");
-    const lockMsg = checkLoginLock(username.toLowerCase());
+    const lockMsg = await checkLoginLock(username.toLowerCase());
     if (lockMsg) { $("#login-error").textContent = lockMsg; $("#login-error").classList.remove("hidden"); return; }
     const btn = $("#login-submit"); btn.disabled = true; btn.textContent = t("loginLoading");
     try {
@@ -2997,14 +3001,14 @@ document.addEventListener("DOMContentLoaded", () => {
         $("#login-error").classList.remove("hidden");
         return;
       }
-      clearLoginFailures(username.toLowerCase());
+      await clearLoginFailures(username.toLowerCase());
       await sb.from("profiles").update({ last_login: new Date().toISOString(), last_login_device: deviceInfo() }).eq("id", user.id);
       logAudit({ action: "تسجيل دخول", entity: "user", entityName: state.profile?.full_name || username });
       showApp();
       if (state.profile && state.profile.must_change_password) openChangePasswordModal(true);
     } catch (err) {
-      recordLoginFailure(username.toLowerCase());
-      const lockMsg2 = checkLoginLock(username.toLowerCase());
+      await recordLoginFailure(username.toLowerCase());
+      const lockMsg2 = await checkLoginLock(username.toLowerCase());
       $("#login-error").textContent = lockMsg2 || t("loginError");
       $("#login-error").classList.remove("hidden");
     } finally {
