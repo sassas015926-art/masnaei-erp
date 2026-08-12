@@ -2511,52 +2511,66 @@ function renderPaginatedTable(containerId, allRows, columns, opts = {}) {
     return allRows.filter(row => columns.some(c => String(c.text(row) ?? "").toLowerCase().includes(q)));
   };
 
-  const draw = () => {
+  // الهيكل الثابت (شريط البحث والأزرار) يُبنى مرة واحدة بس ولا يُعاد إنشاؤه أبدًا —
+  // بعد كده بنحدّث بس جدول النتائج وشريط الصفحات، عشان صندوق البحث ميفقدش التركيز
+  // مع كل حرف بتكتبه (كان ده سبب مشكلة "حرف واحد بس")
+  container.innerHTML = `
+    <div class="toolbar" style="margin-bottom:10px; align-items:center;">
+      <div style="position:relative; max-width:260px; flex:1;">
+        <span style="position:absolute; right:12px; top:11px; color:var(--ink50);">${icon("search", 15)}</span>
+        <input id="${containerId}-search" class="input" style="width:100%; padding-right:34px;" placeholder="بحث...">
+      </div>
+      <select id="${containerId}-pagesize" class="input" style="width:auto;">
+        ${[50, 100, 200, 300, 500, 1000, 2000].map(n => `<option value="${n}" ${n === pageState.pageSize ? "selected" : ""}>${n} صف</option>`).join("")}
+      </select>
+      ${showPrintExport ? `
+      <button class="btn-dark" id="${containerId}-print">${icon("history", 14)} طباعة</button>
+      <button class="btn-dark" id="${containerId}-export">${icon("download", 14)} تصدير Excel</button>` : ""}
+      <span id="${containerId}-count" style="color:var(--ink70); font-size:12px; margin-inline-start:auto;"></span>
+    </div>
+    <div id="${containerId}-body"></div>
+    <div id="${containerId}-pager"></div>`;
+
+  const bodyEl = $(`#${containerId}-body`);
+  const pagerEl = $(`#${containerId}-pager`);
+  const countEl = $(`#${containerId}-count`);
+
+  const drawBody = () => {
     const filtered = getFiltered();
     const totalPages = Math.max(1, Math.ceil(filtered.length / pageState.pageSize));
     if (pageState.page > totalPages) pageState.page = totalPages;
     const start = (pageState.page - 1) * pageState.pageSize;
     const pageRows = filtered.slice(start, start + pageState.pageSize);
 
-    container.innerHTML = `
-      <div class="toolbar" style="margin-bottom:10px; align-items:center;">
-        <div style="position:relative; max-width:260px; flex:1;">
-          <span style="position:absolute; right:12px; top:11px; color:var(--ink50);">${icon("search", 15)}</span>
-          <input id="${containerId}-search" class="input" style="width:100%; padding-right:34px;" placeholder="بحث..." value="${pageState.search}">
-        </div>
-        <select id="${containerId}-pagesize" class="input" style="width:auto;">
-          ${[50, 100, 200, 300, 500, 1000, 2000].map(n => `<option value="${n}" ${n === pageState.pageSize ? "selected" : ""}>${n} صف</option>`).join("")}
-        </select>
-        ${showPrintExport ? `
-        <button class="btn-dark" id="${containerId}-print">${icon("history", 14)} طباعة</button>
-        <button class="btn-dark" id="${containerId}-export">${icon("download", 14)} تصدير Excel</button>` : ""}
-        <span style="color:var(--ink70); font-size:12px; margin-inline-start:auto;">${filtered.length} نتيجة</span>
-      </div>
+    countEl.textContent = `${filtered.length} نتيجة`;
+    bodyEl.innerHTML = `
       <div class="card" style="padding:0; overflow:hidden;">
         <table><thead><tr>${columns.map(c => `<th>${c.label}</th>`).join("")}</tr></thead>
         <tbody>${pageRows.length ? pageRows.map(row => `<tr>${columns.map(c => `<td>${c.cell(row)}</td>`).join("")}</tr>`).join("")
       : `<tr><td colspan="${columns.length}"><div class="empty-note">${opts.emptyText || "لا توجد نتائج."}</div></td></tr>`}</tbody></table>
-      </div>
-      ${totalPages > 1 ? `
+      </div>`;
+
+    pagerEl.innerHTML = totalPages > 1 ? `
       <div style="display:flex; justify-content:center; align-items:center; gap:12px; margin-top:12px;">
         <button class="btn-dark" id="${containerId}-prev" ${pageState.page <= 1 ? "disabled" : ""} style="padding:7px 14px; font-size:12.5px;">‹ السابق</button>
         <span style="font-size:12.5px; color:var(--ink70);">صفحة ${pageState.page} من ${totalPages}</span>
         <button class="btn-dark" id="${containerId}-next" ${pageState.page >= totalPages ? "disabled" : ""} style="padding:7px 14px; font-size:12.5px;">التالي ›</button>
-      </div>` : ""}`;
+      </div>` : "";
 
-    $(`#${containerId}-search`).oninput = (e) => { pageState.search = e.target.value; pageState.page = 1; draw(); };
-    $(`#${containerId}-pagesize`).onchange = (e) => { pageState.pageSize = Number(e.target.value); pageState.page = 1; draw(); };
-    const prevBtn = $(`#${containerId}-prev`); if (prevBtn) prevBtn.onclick = () => { pageState.page--; draw(); };
-    const nextBtn = $(`#${containerId}-next`); if (nextBtn) nextBtn.onclick = () => { pageState.page++; draw(); };
+    const prevBtn = $(`#${containerId}-prev`); if (prevBtn) prevBtn.onclick = () => { pageState.page--; drawBody(); };
+    const nextBtn = $(`#${containerId}-next`); if (nextBtn) nextBtn.onclick = () => { pageState.page++; drawBody(); };
+    if (typeof opts.afterDraw === "function") opts.afterDraw(pageRows);
 
+    // الطباعة والتصدير بيستخدموا "pageRows" بالظبط — يعني اللي ظاهر فعليًا في الصفحة الحالية
+    // حسب حجم الصفحة المختار (لو مختار 50 يطبع/يصدّر 50 بس، مش كل النتائج المطابقة)
     if (showPrintExport) {
-      $(`#${containerId}-print`).onclick = () => printTableReport(opts.title || "تقرير", columns, filtered);
+      $(`#${containerId}-print`).onclick = () => printTableReport(opts.title || "تقرير", columns, pageRows);
       $(`#${containerId}-export`).onclick = async () => {
         const exportBtn = $(`#${containerId}-export`); const origText = exportBtn.innerHTML;
         try {
           exportBtn.disabled = true; exportBtn.innerHTML = "...جارِ التجهيز";
           await ensureXLSX();
-          const rows = filtered.map(row => { const o = {}; columns.forEach(c => { o[c.label] = c.text(row); }); return o; });
+          const rows = pageRows.map(row => { const o = {}; columns.forEach(c => { o[c.label] = c.text(row); }); return o; });
           const wb = XLSX.utils.book_new();
           XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ "ملاحظة": "لا توجد بيانات" }]), (opts.title || "تقرير").slice(0, 31));
           XLSX.writeFile(wb, `${opts.title || "تقرير"}_${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -2567,9 +2581,12 @@ function renderPaginatedTable(containerId, allRows, columns, opts = {}) {
         }
       };
     }
-    if (typeof opts.afterDraw === "function") opts.afterDraw(pageRows);
   };
-  draw();
+
+  $(`#${containerId}-search`).oninput = (e) => { pageState.search = e.target.value; pageState.page = 1; drawBody(); };
+  $(`#${containerId}-pagesize`).onchange = (e) => { pageState.pageSize = Number(e.target.value); pageState.page = 1; drawBody(); };
+
+  drawBody();
 }
 
 // طباعة أي جدول (نفس أعمدة renderPaginatedTable) في نافذة مخفية، بغض النظر عن الصفحة الحالية أو البحث
