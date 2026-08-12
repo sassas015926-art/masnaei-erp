@@ -364,7 +364,7 @@ async function loadProfiles() {
   state.profiles = data || [];
 }
 async function loadAuditLog() {
-  const { data } = await sb.from("audit_log").select("*").order("created_at", { ascending: false }).limit(300);
+  const { data } = await sb.from("audit_log").select("*").order("created_at", { ascending: false }).limit(2000);
   state.auditLog = data || [];
 }
 async function loadBackups() {
@@ -870,50 +870,30 @@ function renderMoveBody(mode) {
 
 /* ---------------- stock table ---------------- */
 function renderStock(main) {
-  const collapsedCats = new Set();
   main.innerHTML = `
     <div class="section-header"><div><div class="section-title">${t("stockTitle")}</div><div class="section-sub">${state.items.length} ${t("itemsRegistered")}</div></div></div>
     <div class="toolbar">
-      <div style="position:relative;"><span style="position:absolute; right:12px; top:11px; color:var(--ink50);">${icon("search", 15)}</span>
-        <input id="stock-search" class="input" style="width:240px; padding-right:34px;" placeholder="${t("searchByNameCode")}"></div>
       <select id="stock-cat" class="input"><option value="__all__">${t("all")}</option>${state.categories.map(c => `<option value="${c}">${c}</option>`).join("")}</select>
-      <button class="icon-btn" id="stock-toggle-all" style="width:auto; padding:0 12px; gap:6px; display:inline-flex; align-items:center; font-size:12.5px; font-weight:700;" title="طي/فرد كل الفئات">${icon("grid", 14)} طي الكل</button>
     </div>
-    <div class="card" style="padding:0; overflow:hidden;">
-      <table><thead><tr><th>${t("code")}</th><th>${t("itemName")}</th><th>${t("category")}</th><th>${t("quantity")}</th><th>%</th><th>${t("status")}</th><th></th></tr></thead><tbody id="stock-body"></tbody></table>
-    </div>`;
+    <div id="stock-table-wrap"></div>`;
+
   const draw = () => {
-    const q = ($("#stock-search").value || "").toLowerCase();
     const cat = $("#stock-cat").value;
-    const filtered = state.items.filter(i => (cat === "__all__" || i.category === cat) && (i.name.toLowerCase().includes(q) || (i.code || "").toLowerCase().includes(q)));
-    if (!filtered.length) { $("#stock-body").innerHTML = `<tr><td colspan="7"><div class="empty-note">لا توجد نتائج مطابقة.</div></td></tr>`; return; }
-    const groups = {};
-    filtered.forEach(it => { const c = it.category || "بدون فئة"; (groups[c] = groups[c] || []).push(it); });
-    $("#stock-body").innerHTML = Object.entries(groups).map(([catName, catItems]) => {
-      const isCollapsed = collapsedCats.has(catName);
-      return `
-      <tr class="cat-row ${isCollapsed ? "is-collapsed" : ""}" data-cat-toggle="${catName}"><td colspan="7" style="background:var(--paper-deep); font-weight:800; font-size:12.5px; padding:8px 16px; border-top:2px solid var(--mustard);"><span class="cat-chevron">${icon("chevronDown", 13)}</span>${catName} <span style="font-weight:600; color:var(--ink50); font-size:11.5px;">(${catItems.length} صنف)</span></td></tr>
-      ${catItems.map(it => `
-        <tr data-cat-row="${catName}" style="${isCollapsed ? "display:none;" : ""}"><td class="mono" style="color:var(--mustard); font-weight:700;">${it.code || "—"}</td><td style="font-weight:700; padding-right:26px;">${it.name}</td><td style="color:var(--ink70);">${it.category || "—"}</td>
-        <td class="mono">${it.qty} / ${it.max_qty} ${it.unit}</td><td style="width:200px;">${tape(it, true)}</td><td>${pill(statusOf(it))}</td>
-        <td><button class="icon-btn" data-movement="${it.name}" title="عرض حركة هذا الصنف">${icon("history", 13)}</button></td></tr>`).join("")}
-    `}).join("");
-    $$("[data-movement]").forEach(b => b.onclick = () => { state.pendingItemFilter = b.dataset.movement; state.tab = "reports"; render(); });
-    $$("[data-cat-toggle]").forEach(row => row.onclick = () => {
-      const cat = row.dataset.catToggle;
-      if (collapsedCats.has(cat)) collapsedCats.delete(cat); else collapsedCats.add(cat);
-      row.classList.toggle("is-collapsed");
-      $$(`[data-cat-row="${cat}"]`).forEach(r => r.style.display = collapsedCats.has(cat) ? "none" : "");
+    const filtered = state.items.filter(i => cat === "__all__" || i.category === cat);
+    renderPaginatedTable("stock-table-wrap", filtered, [
+      { label: t("code"), text: i => i.code || "—", cell: i => `<span class="mono" style="color:var(--mustard); font-weight:700;">${i.code || "—"}</span>` },
+      { label: t("itemName"), text: i => i.name, cell: i => `<span style="font-weight:700;">${i.name}</span>` },
+      { label: t("category"), text: i => i.category || "—", cell: i => `<span style="color:var(--ink70);">${i.category || "—"}</span>` },
+      { label: t("quantity"), text: i => `${i.qty}/${i.max_qty} ${i.unit}`, cell: i => `<span class="mono">${i.qty} / ${i.max_qty} ${i.unit}</span>` },
+      { label: "%", text: i => Math.round(pctOf(i)) + "%", cell: i => `<div style="width:150px;">${tape(i, true)}</div>` },
+      { label: t("status"), text: i => STATUS_META[statusOf(i)].label, cell: i => pill(statusOf(i)) },
+      { label: "", text: () => "", cell: i => `<button class="icon-btn" data-movement="${i.name}" title="عرض حركة هذا الصنف">${icon("history", 13)}</button>` },
+    ], {
+      title: t("stockTitle"), emptyText: "لا توجد نتائج مطابقة.", defaultPageSize: 50,
+      afterDraw: () => { $$("[data-movement]").forEach(b => b.onclick = () => { state.pendingItemFilter = b.dataset.movement; state.tab = "reports"; render(); }); },
     });
   };
-  $("#stock-search").oninput = draw; $("#stock-cat").onchange = draw;
-  $("#stock-toggle-all").onclick = () => {
-    const allCats = state.categories.length ? state.categories : [...new Set(state.items.map(i => i.category || "بدون فئة"))];
-    const collapsingAll = collapsedCats.size < allCats.length;
-    collapsedCats.clear();
-    if (collapsingAll) allCats.forEach(c => collapsedCats.add(c));
-    draw();
-  };
+  $("#stock-cat").onchange = draw;
   draw();
 }
 
@@ -991,11 +971,9 @@ function renderReports(main) {
 
       <div class="card" id="section-txlog">
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
-          <div style="font-weight:800; font-size:15px; display:flex; align-items:center; gap:7px;">${icon("history", 16)} ${t("txLogSection")} — <span id="tx-count" class="mono" style="font-weight:600; color:var(--ink70); font-size:12.5px;"></span></div>
+          <div style="font-weight:800; font-size:15px; display:flex; align-items:center; gap:7px;">${icon("history", 16)} ${t("txLogSection")}</div>
         </div>
-        <div style="max-height:340px; overflow:auto;" class="print-scroll">
-          <table><thead><tr><th>${t("itemName")}</th><th>${t("status")}</th><th>${t("quantity")}</th><th>${t("worker")}</th><th>${t("note")}</th><th>${t("dateTime")}</th><th class="no-print"></th></tr></thead><tbody id="tx-body"></tbody></table>
-        </div>
+        <div id="tx-table-wrap"></div>
       </div>
     </div>`;
 
@@ -1086,15 +1064,17 @@ function renderReports(main) {
       if (allowedCats && !allowedCats.has(nameToCat[t.item_name] || "بدون فئة")) return false;
       return true;
     });
-    $("#tx-count").textContent = `${filtered.length} حركة`;
     const voucherLabel = t("voucherBtn");
-    $("#tx-body").innerHTML = filtered.length ? filtered.map(t => `
-      <tr><td style="font-weight:700;">${t.item_name}</td>
-      <td>${t.type === "in" ? '<span style="color:var(--green); font-weight:700;">إدخال</span>' : '<span style="color:var(--red); font-weight:700;">سحب</span>'}</td>
-      <td class="mono">${t.qty} ${t.unit || ""}</td><td>${t.worker || "—"}</td><td style="color:var(--ink70);">${t.note || "—"}</td>
-      <td class="mono" style="color:var(--ink70);">${fmtDate(t.created_at)}</td>
-      <td class="no-print"><button class="icon-btn" data-voucher="${t.id}" title="${voucherLabel}">${icon("history", 13)}</button></td></tr>`).join("") : `<tr><td colspan="7"><div class="empty-note">لا توجد حركات ضمن هذا الفلتر.</div></td></tr>`;
-    // ملحوظة: التعامل مع نقر زر الطباعة بيتم عن طريق مستمع عام (event delegation) في نهاية الملف
+    renderPaginatedTable("tx-table-wrap", filtered, [
+      { label: t("itemName"), text: tx => tx.item_name, cell: tx => `<span style="font-weight:700;">${tx.item_name}</span>` },
+      { label: t("status"), text: tx => (tx.type === "in" ? "إدخال" : "سحب"), cell: tx => tx.type === "in" ? '<span style="color:var(--green); font-weight:700;">إدخال</span>' : '<span style="color:var(--red); font-weight:700;">سحب</span>' },
+      { label: t("quantity"), text: tx => `${tx.qty} ${tx.unit || ""}`, cell: tx => `<span class="mono">${tx.qty} ${tx.unit || ""}</span>` },
+      { label: t("worker"), text: tx => tx.worker || "—", cell: tx => tx.worker || "—" },
+      { label: t("note"), text: tx => tx.note || "—", cell: tx => `<span style="color:var(--ink70);">${tx.note || "—"}</span>` },
+      { label: t("dateTime"), text: tx => fmtDate(tx.created_at), cell: tx => `<span class="mono" style="color:var(--ink70);">${fmtDate(tx.created_at)}</span>` },
+      { label: "", text: () => "", cell: tx => `<button class="icon-btn no-print" data-voucher="${tx.id}" title="${voucherLabel}">${icon("history", 13)}</button>` },
+    ], { title: t("txLogSection"), emptyText: "لا توجد حركات ضمن هذا الفلتر.", defaultPageSize: 50, showPrintExport: false });
+    // ملحوظة: التعامل مع نقر زر الطباعة الفردي (طباعة إذن) بيتم عن طريق مستمع عام (event delegation) في نهاية الملف
     return filtered;
   };
   let currentFiltered = drawTx();
@@ -1657,14 +1637,9 @@ async function renderItemsAdmin(main) {
     <div class="section-header"><div style="font-weight:800; font-size:16px;">${t("itemsTitle")}</div>
       <button class="btn-dark" id="new-item-btn">${icon("plus", 15)} ${t("newItemBtn")}</button></div>
     <div class="toolbar">
-      <div style="position:relative; max-width:320px; flex:1;">
-        <span style="position:absolute; right:12px; top:11px; color:var(--ink50);">${icon("search", 15)}</span>
-        <input id="items-search" class="input" style="width:100%; padding-right:34px;" placeholder="${t("searchByNameCode")}">
-      </div>
+      <select id="items-cat" class="input"><option value="__all__">${t("all")}</option>${state.categories.map(c => `<option value="${c}">${c}</option>`).join("")}</select>
     </div>
-    <div class="card" style="padding:0; overflow:hidden;">
-      <table><thead><tr><th>${t("code")}</th><th>${t("itemName")}</th><th>${t("category")}</th><th>${t("unit")}</th><th>${t("currentQty")}</th><th>${t("maxQty")}</th><th>${t("itemSupplier")}</th><th>${t("itemStorage")}</th><th></th></tr></thead><tbody id="items-body"></tbody></table>
-    </div>`;
+    <div id="items-table-wrap"></div>`;
 
   $("#download-template").onclick = async () => {
     const dtBtn = $("#download-template"); const dtOrigText = dtBtn.innerHTML;
@@ -1814,49 +1789,41 @@ async function renderItemsAdmin(main) {
     await loadCategories(); renderItemsAdmin(main); toast("تمت إضافة الفئة");
   };
 
-  const collapsedItemCats = new Set();
   const drawItems = () => {
-    const q = ($("#items-search").value || "").toLowerCase().trim();
-    const filtered = q ? state.items.filter(it => it.name.toLowerCase().includes(q) || (it.code || "").toLowerCase().includes(q)) : state.items;
+    const cat = $("#items-cat").value;
+    const filtered = cat === "__all__" ? state.items : state.items.filter(it => it.category === cat);
     const isNew = (it) => it.created_at && (Date.now() - new Date(it.created_at).getTime()) < 48 * 3600 * 1000; // آخر 48 ساعة
-    if (!filtered.length) { $("#items-body").innerHTML = `<tr><td colspan="9"><div class="empty-note">لا توجد نتائج مطابقة.</div></td></tr>`; return; }
-    const groups = {};
-    filtered.forEach(it => { const c = it.category || "بدون فئة"; (groups[c] = groups[c] || []).push(it); });
-    $("#items-body").innerHTML = Object.entries(groups).map(([catName, catItems]) => {
-      const isCollapsed = collapsedItemCats.has(catName);
-      return `
-      <tr class="cat-row ${isCollapsed ? "is-collapsed" : ""}" data-icat-toggle="${catName}"><td colspan="9" style="background:var(--paper-deep); font-weight:800; font-size:12.5px; padding:8px 16px; border-top:2px solid var(--mustard);"><span class="cat-chevron">${icon("chevronDown", 13)}</span>${catName} <span style="font-weight:600; color:var(--ink50); font-size:11.5px;">(${catItems.length} صنف)</span></td></tr>
-      ${catItems.map(it => `
-      <tr data-icat-row="${catName}" style="${isCollapsed ? "display:none;" : ""}"><td class="mono" style="font-weight:700; color:var(--mustard);">${it.code || "—"}</td>
-      <td style="font-weight:700;">${it.name} ${isNew(it) ? `<span class="pill pill-ok" style="margin-right:6px;">جديد</span>` : ""}</td>
-      <td style="color:var(--ink70);">${it.category || "—"}</td><td>${it.unit}</td>
-      <td class="mono">${it.qty}</td><td class="mono">${it.max_qty}</td>
-      <td style="color:var(--ink70); font-size:12.5px;">${(state.suppliers.find(s => s.id === it.supplier_id) || {}).name || "—"}</td>
-      <td style="color:var(--ink70); font-size:12.5px;">${it.storage_location || "—"}</td>
-      <td><div style="display:flex; gap:6px; justify-content:flex-end;">
-        <button class="icon-btn" style="color:var(--green);" data-quick-add="${it.id}" title="إضافة كمية سريعًا">${icon("plus", 14)}</button>
-        <button class="icon-btn" data-edit="${it.id}">${icon("pencil", 14)}</button>
-        <button class="icon-btn" style="color:var(--red);" data-del="${it.id}">${icon("trash", 14)}</button>
-      </div></td></tr>`).join("")}`;
-    }).join("");
-    $$("[data-edit]").forEach(b => b.onclick = () => openItemModal(state.items.find(i => i.id === b.dataset.edit)));
-    $$("[data-quick-add]").forEach(b => b.onclick = () => openQuickAddQtyModal(state.items.find(i => i.id === b.dataset.quickAdd), main));
-    $$("[data-del]").forEach(b => b.onclick = async () => {
-      const it = state.items.find(i => i.id === b.dataset.del);
-      if (!confirm(`حذف "${it.name}" نهائيًا؟`)) return;
-      await sb.from("items").delete().eq("id", it.id);
-      logAudit({ action: "حذف صنف", entity: "item", entityName: it.name });
-      await loadItems(); renderItemsAdmin(main); toast("تم حذف الصنف");
-    });
-    $$("[data-icat-toggle]").forEach(row => row.onclick = () => {
-      const cat = row.dataset.icatToggle;
-      if (collapsedItemCats.has(cat)) collapsedItemCats.delete(cat); else collapsedItemCats.add(cat);
-      row.classList.toggle("is-collapsed");
-      $$(`[data-icat-row="${cat}"]`).forEach(r => r.style.display = collapsedItemCats.has(cat) ? "none" : "");
+    renderPaginatedTable("items-table-wrap", filtered, [
+      { label: t("code"), text: it => it.code || "—", cell: it => `<span class="mono" style="font-weight:700; color:var(--mustard);">${it.code || "—"}</span>` },
+      { label: t("itemName"), text: it => it.name, cell: it => `<span style="font-weight:700;">${it.name}</span> ${isNew(it) ? `<span class="pill pill-ok">جديد</span>` : ""}` },
+      { label: t("category"), text: it => it.category || "—", cell: it => `<span style="color:var(--ink70);">${it.category || "—"}</span>` },
+      { label: t("unit"), text: it => it.unit, cell: it => it.unit },
+      { label: t("currentQty"), text: it => it.qty, cell: it => `<span class="mono">${it.qty}</span>` },
+      { label: t("maxQty"), text: it => it.max_qty, cell: it => `<span class="mono">${it.max_qty}</span>` },
+      { label: t("itemSupplier"), text: it => (state.suppliers.find(s => s.id === it.supplier_id) || {}).name || "—", cell: it => `<span style="color:var(--ink70); font-size:12.5px;">${(state.suppliers.find(s => s.id === it.supplier_id) || {}).name || "—"}</span>` },
+      { label: t("itemStorage"), text: it => it.storage_location || "—", cell: it => `<span style="color:var(--ink70); font-size:12.5px;">${it.storage_location || "—"}</span>` },
+      { label: "", text: () => "", cell: it => `<div style="display:flex; gap:6px; justify-content:flex-end;">
+          <button class="icon-btn" style="color:var(--green);" data-quick-add="${it.id}" title="إضافة كمية سريعًا">${icon("plus", 14)}</button>
+          <button class="icon-btn" data-edit="${it.id}">${icon("pencil", 14)}</button>
+          <button class="icon-btn" style="color:var(--red);" data-del="${it.id}">${icon("trash", 14)}</button>
+        </div>` },
+    ], {
+      title: t("itemsTitle"), emptyText: "لا توجد نتائج مطابقة.", defaultPageSize: 50,
+      afterDraw: () => {
+        $$("[data-edit]").forEach(b => b.onclick = () => openItemModal(state.items.find(i => i.id === b.dataset.edit)));
+        $$("[data-quick-add]").forEach(b => b.onclick = () => openQuickAddQtyModal(state.items.find(i => i.id === b.dataset.quickAdd), main));
+        $$("[data-del]").forEach(b => b.onclick = async () => {
+          const it = state.items.find(i => i.id === b.dataset.del);
+          if (!confirm(`حذف "${it.name}" نهائيًا؟`)) return;
+          await sb.from("items").delete().eq("id", it.id);
+          logAudit({ action: "حذف صنف", entity: "item", entityName: it.name });
+          await loadItems(); renderItemsAdmin(main); toast("تم حذف الصنف");
+        });
+      },
     });
   };
   drawItems();
-  $("#items-search").oninput = drawItems;
+  $("#items-cat").onchange = drawItems;
   $("#new-item-btn").onclick = () => openItemModal(null);
 }
 
@@ -2530,40 +2497,141 @@ function openNewUserModal(main) {
 }
 
 /* ---------------- audit log view ---------------- */
+// دالة عامة قابلة لإعادة الاستخدام: بحث + ترقيم صفحات (مع اختيار عدد الصفوف) + طباعة + تصدير Excel
+// لأي جدول في النظام. كل عمود بيحدد شكل عرضه (cell) وقيمته النصية للبحث والتصدير (text).
+function renderPaginatedTable(containerId, allRows, columns, opts = {}) {
+  const pageState = { page: 1, pageSize: opts.defaultPageSize || 50, search: "" };
+  const container = $(`#${containerId}`);
+  if (!container) return;
+  const showPrintExport = opts.showPrintExport !== false;
+
+  const getFiltered = () => {
+    const q = pageState.search.trim().toLowerCase();
+    if (!q) return allRows;
+    return allRows.filter(row => columns.some(c => String(c.text(row) ?? "").toLowerCase().includes(q)));
+  };
+
+  const draw = () => {
+    const filtered = getFiltered();
+    const totalPages = Math.max(1, Math.ceil(filtered.length / pageState.pageSize));
+    if (pageState.page > totalPages) pageState.page = totalPages;
+    const start = (pageState.page - 1) * pageState.pageSize;
+    const pageRows = filtered.slice(start, start + pageState.pageSize);
+
+    container.innerHTML = `
+      <div class="toolbar" style="margin-bottom:10px; align-items:center;">
+        <div style="position:relative; max-width:260px; flex:1;">
+          <span style="position:absolute; right:12px; top:11px; color:var(--ink50);">${icon("search", 15)}</span>
+          <input id="${containerId}-search" class="input" style="width:100%; padding-right:34px;" placeholder="بحث..." value="${pageState.search}">
+        </div>
+        <select id="${containerId}-pagesize" class="input" style="width:auto;">
+          ${[50, 100, 200, 300, 500, 1000, 2000].map(n => `<option value="${n}" ${n === pageState.pageSize ? "selected" : ""}>${n} صف</option>`).join("")}
+        </select>
+        ${showPrintExport ? `
+        <button class="btn-dark" id="${containerId}-print">${icon("history", 14)} طباعة</button>
+        <button class="btn-dark" id="${containerId}-export">${icon("download", 14)} تصدير Excel</button>` : ""}
+        <span style="color:var(--ink70); font-size:12px; margin-inline-start:auto;">${filtered.length} نتيجة</span>
+      </div>
+      <div class="card" style="padding:0; overflow:hidden;">
+        <table><thead><tr>${columns.map(c => `<th>${c.label}</th>`).join("")}</tr></thead>
+        <tbody>${pageRows.length ? pageRows.map(row => `<tr>${columns.map(c => `<td>${c.cell(row)}</td>`).join("")}</tr>`).join("")
+      : `<tr><td colspan="${columns.length}"><div class="empty-note">${opts.emptyText || "لا توجد نتائج."}</div></td></tr>`}</tbody></table>
+      </div>
+      ${totalPages > 1 ? `
+      <div style="display:flex; justify-content:center; align-items:center; gap:12px; margin-top:12px;">
+        <button class="btn-dark" id="${containerId}-prev" ${pageState.page <= 1 ? "disabled" : ""} style="padding:7px 14px; font-size:12.5px;">‹ السابق</button>
+        <span style="font-size:12.5px; color:var(--ink70);">صفحة ${pageState.page} من ${totalPages}</span>
+        <button class="btn-dark" id="${containerId}-next" ${pageState.page >= totalPages ? "disabled" : ""} style="padding:7px 14px; font-size:12.5px;">التالي ›</button>
+      </div>` : ""}`;
+
+    $(`#${containerId}-search`).oninput = (e) => { pageState.search = e.target.value; pageState.page = 1; draw(); };
+    $(`#${containerId}-pagesize`).onchange = (e) => { pageState.pageSize = Number(e.target.value); pageState.page = 1; draw(); };
+    const prevBtn = $(`#${containerId}-prev`); if (prevBtn) prevBtn.onclick = () => { pageState.page--; draw(); };
+    const nextBtn = $(`#${containerId}-next`); if (nextBtn) nextBtn.onclick = () => { pageState.page++; draw(); };
+
+    if (showPrintExport) {
+      $(`#${containerId}-print`).onclick = () => printTableReport(opts.title || "تقرير", columns, filtered);
+      $(`#${containerId}-export`).onclick = async () => {
+        const exportBtn = $(`#${containerId}-export`); const origText = exportBtn.innerHTML;
+        try {
+          exportBtn.disabled = true; exportBtn.innerHTML = "...جارِ التجهيز";
+          await ensureXLSX();
+          const rows = filtered.map(row => { const o = {}; columns.forEach(c => { o[c.label] = c.text(row); }); return o; });
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ "ملاحظة": "لا توجد بيانات" }]), (opts.title || "تقرير").slice(0, 31));
+          XLSX.writeFile(wb, `${opts.title || "تقرير"}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        } catch (e) {
+          toast("حدث خطأ أثناء تصدير Excel", true);
+        } finally {
+          exportBtn.disabled = false; exportBtn.innerHTML = origText;
+        }
+      };
+    }
+    if (typeof opts.afterDraw === "function") opts.afterDraw(pageRows);
+  };
+  draw();
+}
+
+// طباعة أي جدول (نفس أعمدة renderPaginatedTable) في نافذة مخفية، بغض النظر عن الصفحة الحالية أو البحث
+function printTableReport(title, columns, rows) {
+  const html = `
+    <div style="padding:20px; direction:rtl; font-family:Tahoma,Arial,sans-serif; color:#17323C;">
+      <div style="font-weight:800; font-size:18px; margin-bottom:4px;">${title}</div>
+      <div style="font-size:11.5px; color:#666; margin-bottom:16px;">تم إنشاء التقرير في: ${fmtDate(new Date().toISOString())} — ${rows.length} صف</div>
+      <table style="width:100%; border-collapse:collapse; font-size:12px;">
+        <thead><tr>${columns.map(c => `<th style="border:1px solid #ccc; padding:6px 8px; background:#f2f2f2; text-align:right;">${c.label}</th>`).join("")}</tr></thead>
+        <tbody>${rows.map(row => `<tr>${columns.map(c => `<td style="border:1px solid #ccc; padding:6px 8px;">${c.text(row)}</td>`).join("")}</tr>`).join("")}</tbody>
+      </table>
+    </div>`;
+  const fullDoc = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>${title}</title>
+    <style>* { box-sizing:border-box; } body { margin:0; } @media print { @page { margin: 10mm; } }</style></head><body>${html}</body></html>`;
+  try {
+    let frame = document.getElementById("report-print-frame");
+    if (frame) frame.remove();
+    frame = document.createElement("iframe");
+    frame.id = "report-print-frame";
+    frame.style.cssText = "position:fixed; right:0; bottom:0; width:0; height:0; border:0;";
+    document.body.appendChild(frame);
+    const doc = frame.contentWindow.document;
+    doc.open(); doc.write(fullDoc); doc.close();
+    frame.contentWindow.focus();
+    frame.contentWindow.print();
+    setTimeout(() => { const f = document.getElementById("report-print-frame"); if (f) f.remove(); }, 3000);
+  } catch (e) {
+    toast("تعذّرت الطباعة: " + e.message, true);
+  }
+}
+
 async function renderAudit(main) {
   if (!_auditLoaded) { main.innerHTML = `<div class="empty-note">جاري تحميل سجل الأنشطة...</div>`; await ensureAuditLog(); if (state.tab !== "audit") return; }
-  const { data: notifLog } = await sb.from("notification_log").select("*").order("created_at", { ascending: false }).limit(100);
+  const { data: notifLog } = await sb.from("notification_log").select("*").order("created_at", { ascending: false }).limit(2000);
   main.innerHTML = `
     <div class="section-header"><div><div class="section-title">${t("auditTitle")}</div><div class="section-sub">${t("auditSub")}</div></div></div>
-    <div class="card" style="padding:0; overflow:hidden; margin-bottom:22px;">
-      <table><thead><tr><th>${t("fullNameLabel")}</th><th>${t("actionCol")}</th><th>${t("entityCol")}</th><th>${t("beforeCol")}</th><th>${t("afterCol")}</th><th>${t("deviceLabel")}</th><th>${t("timeCol")}</th></tr></thead><tbody id="audit-body"></tbody></table>
-    </div>
-    <div class="section-header"><div><div class="section-title" style="font-size:16px;">سجل إرسال الإشعارات (إيميل وتيليجرام)</div><div class="section-sub">آخر 100 محاولة إرسال — نجحت أو فشلت ولماذا</div></div></div>
-    <div class="card" style="padding:0; overflow:hidden;">
-      <table><thead><tr><th>القناة</th><th>النوع</th><th>المستلم</th><th>الحالة</th><th>سبب الفشل</th><th>الوقت</th></tr></thead><tbody id="notif-log-body"></tbody></table>
-    </div>`;
-  $("#audit-body").innerHTML = state.auditLog.length ? state.auditLog.map(a => `
-    <tr>
-      <td style="font-weight:700;">${a.actor_name || "—"}</td>
-      <td>${a.action}</td>
-      <td>${a.entity_name || "—"}${a.details ? `<div style="font-size:11px; color:var(--ink50);">${a.details}</div>` : ""}</td>
-      <td class="mono">${a.qty_before ?? "—"}</td>
-      <td class="mono">${a.qty_after ?? "—"}</td>
-      <td style="color:var(--ink70); font-size:12px;">${a.device || "—"}</td>
-      <td class="mono" style="color:var(--ink70); font-size:12px;">${fmtDate(a.created_at)}</td>
-    </tr>`).join("") : `<tr><td colspan="7"><div class="empty-note">${t("noAudit")}</div></td></tr>`;
+    <div id="audit-table-wrap" style="margin-bottom:26px;"></div>
+    <div class="section-header"><div><div class="section-title" style="font-size:16px;">سجل إرسال الإشعارات (إيميل وتيليجرام)</div><div class="section-sub">كل محاولة إرسال — نجحت أو فشلت ولماذا</div></div></div>
+    <div id="notif-log-wrap"></div>`;
 
   const msgTypeLabels = { critical: "تنبيه حرج", low: "تنبيه منخفض", daily_report: "التقرير اليومي", welcome: "رسالة ترحيب", test: "اختبار" };
   const channelLabels = { email: "📧 إيميل", telegram: "✈️ تيليجرام" };
-  $("#notif-log-body").innerHTML = (notifLog && notifLog.length) ? notifLog.map(n => `
-    <tr>
-      <td style="font-weight:700;">${channelLabels[n.channel] || n.channel}</td>
-      <td>${msgTypeLabels[n.msg_type] || n.msg_type}</td>
-      <td style="color:var(--ink70); font-size:12.5px;">${n.recipient}</td>
-      <td>${n.success ? `<span class="pill pill-ok">✓ نجح</span>` : `<span class="pill pill-critical">✗ فشل</span>`}</td>
-      <td style="color:var(--red); font-size:12px;">${n.reason || "—"}</td>
-      <td class="mono" style="color:var(--ink70); font-size:12px;">${fmtDate(n.created_at)}</td>
-    </tr>`).join("") : `<tr><td colspan="6"><div class="empty-note">لا يوجد سجل إرسال بعد.</div></td></tr>`;
+
+  renderPaginatedTable("audit-table-wrap", state.auditLog, [
+    { label: t("fullNameLabel"), text: a => a.actor_name || "—", cell: a => `<span style="font-weight:700;">${a.actor_name || "—"}</span>` },
+    { label: t("actionCol"), text: a => a.action, cell: a => a.action },
+    { label: t("entityCol"), text: a => [a.entity_name, a.details].filter(Boolean).join(" — "), cell: a => `${a.entity_name || "—"}${a.details ? `<div style="font-size:11px; color:var(--ink50);">${a.details}</div>` : ""}` },
+    { label: t("beforeCol"), text: a => a.qty_before ?? "—", cell: a => `<span class="mono">${a.qty_before ?? "—"}</span>` },
+    { label: t("afterCol"), text: a => a.qty_after ?? "—", cell: a => `<span class="mono">${a.qty_after ?? "—"}</span>` },
+    { label: t("deviceLabel"), text: a => a.device || "—", cell: a => `<span style="color:var(--ink70); font-size:12px;">${a.device || "—"}</span>` },
+    { label: t("timeCol"), text: a => fmtDate(a.created_at), cell: a => `<span class="mono" style="color:var(--ink70); font-size:12px;">${fmtDate(a.created_at)}</span>` },
+  ], { title: t("auditTitle"), emptyText: t("noAudit") });
+
+  renderPaginatedTable("notif-log-wrap", notifLog || [], [
+    { label: "القناة", text: n => channelLabels[n.channel] || n.channel, cell: n => `<span style="font-weight:700;">${channelLabels[n.channel] || n.channel}</span>` },
+    { label: "النوع", text: n => msgTypeLabels[n.msg_type] || n.msg_type, cell: n => msgTypeLabels[n.msg_type] || n.msg_type },
+    { label: "المستلم", text: n => n.recipient, cell: n => `<span style="color:var(--ink70); font-size:12.5px;">${n.recipient}</span>` },
+    { label: "الحالة", text: n => n.success ? "نجح" : "فشل", cell: n => n.success ? `<span class="pill pill-ok">✓ نجح</span>` : `<span class="pill pill-critical">✗ فشل</span>` },
+    { label: "سبب الفشل", text: n => n.reason || "—", cell: n => `<span style="color:var(--red); font-size:12px;">${n.reason || "—"}</span>` },
+    { label: "الوقت", text: n => fmtDate(n.created_at), cell: n => `<span class="mono" style="color:var(--ink70); font-size:12px;">${fmtDate(n.created_at)}</span>` },
+  ], { title: "سجل الإشعارات", emptyText: "لا يوجد سجل إرسال بعد.", defaultPageSize: 50 });
 }
 
 function genItemCode(category) {
