@@ -197,6 +197,29 @@ Deno.serve(async (req) => {
       return json({ success: true });
     }
 
+    // ---------------- تحديث بيانات بروفايل أي مستخدم (اسم المستخدم للعرض، إيميل التواصل، إلخ) ----------------
+    // بيشتغل بصلاحية service role عشان يضمن الحفظ دايمًا مهما كانت صلاحيات RLS على جدول profiles،
+    // لأن تحديث بيانات مستخدم تاني من المتصفح مباشرة ممكن يترفض بصمت لو المدير مش نفس صاحب الحساب.
+    if (action === "updateProfile") {
+      const { userId, updates } = body;
+      if (!userId || !updates || typeof updates !== "object") {
+        return json({ error: "البيانات ناقصة" }, 400);
+      }
+      const allowedFields = ["username", "contact_email", "must_change_password", "full_name"];
+      const safeUpdates: Record<string, unknown> = {};
+      for (const k of allowedFields) if (k in updates) safeUpdates[k] = updates[k];
+
+      const { error: profErr } = await admin
+        .from("profiles")
+        .update(safeUpdates)
+        .eq("id", userId);
+
+      if (profErr) {
+        return json({ error: profErr.message }, 400);
+      }
+      return json({ success: true });
+    }
+
     // ---------------- إعادة تعيين كلمة مرور (تلقائية أو يحددها المدير) ----------------
     if (action === "resetPassword") {
       const { userId, customPassword } = body;

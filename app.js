@@ -432,9 +432,17 @@ async function boot() {
     showLogin();
   }
 
-  sb.auth.onAuthStateChange((event, session) => {
+  sb.auth.onAuthStateChange(async (event, session) => {
     if (event === "SIGNED_OUT") {
-      showLogin();
+      // إشعار "SIGNED_OUT" ممكن يكون مؤقت/كاذب لو فيه أكتر من تبويب أو جهاز
+      // مسجّل بنفس الحساب (تجديد المفتاح في تبويب تاني بيبعت الإشعار ده للكل
+      // لحظيًا حتى لو الجلسة سليمة فعليًا). قبل ما نطرد المستخدم فعليًا، نتأكد
+      // بشكل مباشر من قاعدة الجلسة إن مفيش جلسة سليمة فعلًا.
+      const { data: { session: recheck } } = await sb.auth.getSession();
+      if (!recheck) {
+        state.user = null; state.profile = null;
+        showLogin();
+      }
     }
   });
 }
@@ -2462,7 +2470,10 @@ function openNewUserModal(main) {
     const newUserId = res.userId || res.user?.id || res.id;
     const profileUpdate = { username };
     if (contactEmail) { profileUpdate.contact_email = contactEmail; profileUpdate.must_change_password = true; }
-    if (newUserId) await sb.from("profiles").update(profileUpdate).eq("id", newUserId);
+    if (newUserId) {
+      const profRes = await callManageUsers({ action: "updateProfile", userId: newUserId, updates: profileUpdate });
+      if (profRes.error) console.warn("تعذر حفظ بيانات البروفايل الإضافية:", profRes.error);
+    }
     logAudit({ action: "إنشاء حساب مستخدم", entity: "user", entityName: fullName || username, details: `الدور: ${roleLabels[role]}` });
 
     // مزامنة تلقائية مع "مستلمي الإيميل" — بدل ما يضاف يدويًا مرة تانية من صفحة تانية
@@ -2926,8 +2937,8 @@ function openEditUserModal(p, main) {
     if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) { toast("البريد الإلكتروني غير صحيح", true); return; }
     const btn = $("#eu-save", overlay); btn.disabled = true; btn.textContent = "جاري الحفظ...";
     if (newName !== p.full_name || contactEmail !== (p.contact_email || "")) {
-      const { error } = await sb.from("profiles").update({ full_name: newName, contact_email: contactEmail || null }).eq("id", p.id);
-      if (error) { toast("تعذر تحديث البيانات — " + (error.message || ""), true); btn.disabled = false; btn.textContent = "حفظ التعديلات"; return; }
+      const res = await callManageUsers({ action: "updateProfile", userId: p.id, updates: { full_name: newName, contact_email: contactEmail || null } });
+      if (res.error) { toast("تعذر تحديث البيانات — " + res.error, true); btn.disabled = false; btn.textContent = "حفظ التعديلات"; return; }
     }
     if (newUsername && newUsername !== (p.username || "") && /^[a-z0-9._-]+$/.test(newUsername)) {
       const res = await callManageUsers({ action: "updateUsername", userId: p.id, newUsername });
