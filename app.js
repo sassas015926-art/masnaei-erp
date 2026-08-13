@@ -2393,6 +2393,19 @@ async function callEmailService(payload) {
   }
 }
 
+// مزامنة موحّدة مع جدول مستلمي الإيميل — بتمنع التكرار عن طريق حذف أي صف قديم
+// مرتبط بنفس حساب المستخدم (user_id) لو كان بإيميل مختلف عن الإيميل الحالي،
+// قبل ما تحفظ/تحدّث الإيميل الحالي. لو مكررتش الحفظ لنفس الشخص مرتين بغلط.
+async function syncEmailRecipient(userId, email, name, notifyCritical, notifyLow, notifyDaily) {
+  if (userId) {
+    await sb.from("email_recipients").delete().eq("user_id", userId).neq("email", email);
+  }
+  const { error } = await sb.from("email_recipients").upsert({
+    email, name, user_id: userId,
+    notify_critical: notifyCritical, notify_low: notifyLow, notify_daily_report: notifyDaily,
+  }, { onConflict: "email" });
+  return error;
+}
 function genRandomPassword() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
   const bytes = crypto.getRandomValues(new Uint8Array(10));
@@ -2478,12 +2491,10 @@ function openNewUserModal(main) {
 
     // مزامنة تلقائية مع "مستلمي الإيميل" — بدل ما يضاف يدويًا مرة تانية من صفحة تانية
     if (contactEmail) {
-      const { error: syncErr } = await sb.from("email_recipients").upsert({
-        email: contactEmail, name: fullName, user_id: newUserId,
-        notify_critical: $("#nu-notify-critical", overlay).checked,
-        notify_low: $("#nu-notify-low", overlay).checked,
-        notify_daily_report: $("#nu-notify-daily", overlay).checked,
-      }, { onConflict: "email" });
+      const syncErr = await syncEmailRecipient(
+        newUserId, contactEmail, fullName,
+        $("#nu-notify-critical", overlay).checked, $("#nu-notify-low", overlay).checked, $("#nu-notify-daily", overlay).checked,
+      );
       if (syncErr) console.warn("تعذر مزامنة مستلم الإيميل:", syncErr.message);
     }
 
@@ -2946,12 +2957,10 @@ function openEditUserModal(p, main) {
     }
     // مزامنة تلقائية مع "مستلمي الإيميل" لو فيه بريد إلكتروني
     if (contactEmail) {
-      const { error: syncErr } = await sb.from("email_recipients").upsert({
-        email: contactEmail, name: newName, user_id: p.id,
-        notify_critical: $("#eu-notify-critical", overlay).checked,
-        notify_low: $("#eu-notify-low", overlay).checked,
-        notify_daily_report: $("#eu-notify-daily", overlay).checked,
-      }, { onConflict: "email" });
+      const syncErr = await syncEmailRecipient(
+        p.id, contactEmail, newName,
+        $("#eu-notify-critical", overlay).checked, $("#eu-notify-low", overlay).checked, $("#eu-notify-daily", overlay).checked,
+      );
       if (syncErr) console.warn("تعذر مزامنة مستلم الإيميل:", syncErr.message);
     }
     logAudit({ action: "تعديل بيانات مستخدم", entity: "user", entityName: newName });
