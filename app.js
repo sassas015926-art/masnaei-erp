@@ -1026,6 +1026,7 @@ function renderNav() {
     </button>`).join("");
   $$(".nav-btn").forEach(b => b.onclick = async () => {
     state.tab = b.dataset.tab; state.selectedItem = null;
+    if (state.tab !== "stockCount") state.scDetail = null; // متفتحش على تفاصيل جلسة قديمة لما ترجع تاني
     if (state.tab === "audit") await loadAuditLog();
     if (state.tab === "users") await loadProfiles();
     if (state.tab === "suppliers") await loadSuppliers();
@@ -3695,11 +3696,34 @@ async function renderStockCount(main) {
   if (newBtn) newBtn.onclick = () => openNewStockCountModal(main);
 }
 
+// مين يقدر يحدد مسار الجرد؟ مدير المصنع أو مدير النظام (وهيتضاف "صاحب
+// المصنع" هنا لما يتعمل كدور مستخدم مستقبلًا — مكان واحد بس للتعديل)
+const SC_PATH_DECIDERS = ["admin", "factory_manager"];
+function canDecideScPath() { return SC_PATH_DECIDERS.includes(state.profile?.role); }
+function checkboxList(id, options, { selected = [] } = {}) {
+  return `<div id="${id}" class="sc-checkbox-list" style="max-height:140px; overflow-y:auto; border:1px solid var(--ink12); border-radius:8px; padding:8px;">
+    ${options.length ? options.map(o => `
+      <label style="display:flex; align-items:center; gap:8px; padding:4px 0; cursor:pointer; font-size:13px;">
+        <input type="checkbox" value="${o.id}" ${selected.includes(o.id) ? "checked" : ""}> ${escHtml(o.label)}
+      </label>`).join("") : `<div style="color:var(--ink50); font-size:12px;">لا يوجد</div>`}
+  </div>`;
+}
+function checkboxListValues(id, overlay) {
+  return $$(`#${id} input[type=checkbox]:checked`, overlay).map(el => el.value);
+}
+
 function openNewStockCountModal(main) {
   if (blockIfReadOnly()) return;
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   const activeWarehouses = state.warehouses.filter(w => w.is_active);
+  // أمناء المخزن المسجّلين في النظام فعليًا بس (role = keeper) — مش كل المستخدمين
+  const keepers = state.profiles.filter(p => p.is_active && p.role === "keeper").map(p => ({ id: p.id, label: p.full_name || p.username }));
+  // باقي المستخدمين للجنة — بدون أمناء المخازن
+  const nonKeepers = state.profiles.filter(p => p.is_active && p.role !== "keeper").map(p => ({ id: p.id, label: `${p.full_name || p.username} (${ROLE_LABELS[p.role] || p.role})` }));
+  // أمين المخزن اللي بينشئ الجرد بنفسه: مقصور على مرحلته هو بس (يراجع شغله)
+  const creatorIsKeeper = state.profile?.role === "keeper" && !canDecideScPath();
+
   overlay.innerHTML = `
     <div class="modal-box">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
@@ -3708,7 +3732,7 @@ function openNewStockCountModal(main) {
       </div>
       <div class="field"><label>${t("scWarehouse")}</label>
         <select id="sc-warehouse" class="input" style="width:100%;">
-          ${activeWarehouses.map(w => `<option value="${w.id}">${escHtml(w.name)} — ${escHtml(scWarehouseName ? state.sites.find(s => s.id === w.site_id)?.name || "" : "")}</option>`).join("")}
+          ${activeWarehouses.map(w => `<option value="${w.id}">${escHtml(w.name)}</option>`).join("")}
         </select>
       </div>
       <div style="display:flex; gap:10px;">
@@ -3736,29 +3760,24 @@ function openNewStockCountModal(main) {
       </div>
       <div class="field hidden" id="sc-items-wrap">
         <label>الأصناف المشمولة</label>
-        <select id="sc-items" class="input" style="width:100%; height:110px;" multiple>
-          ${state.items.map(i => `<option value="${i.id}">${escHtml(i.name)}</option>`).join("")}
-        </select>
+        ${checkboxList("sc-items", state.items.map(i => ({ id: i.id, label: i.name })))}
       </div>
-      ${isAdmin() ? `
-      <div class="field"><label>${t("scApprovalPath")} (اختياري — لو سبته فاضي هياخد إعداد المخزن الافتراضي)</label>
-        <select id="sc-path" class="input" style="width:100%;">
+      ${!creatorIsKeeper ? `
+      <div class="field"><label>${t("scApprovalPath")}${canDecideScPath() ? " (اختياري — لو سبته فاضي هياخد إعداد المخزن الافتراضي)" : ""}</label>
+        <select id="sc-path" class="input" style="width:100%;" ${canDecideScPath() ? "" : "disabled"}>
           <option value="">— افتراضي المخزن —</option>
           <option value="primary_only">${t("scPathPrimaryOnly")}</option>
           <option value="committee_only">${t("scPathCommitteeOnly")}</option>
           <option value="full">${t("scPathFull")}</option>
         </select>
-      </div>` : ""}
+        ${!canDecideScPath() ? `<div style="font-size:11px; color:var(--ink50); margin-top:4px;">تحديد المسار مقصور على مدير المصنع أو مدير النظام</div>` : ""}
+      </div>` : `<input type="hidden" id="sc-path" value="primary_only">`}
       <div class="field"><label>${t("scPrimaryCounters")}</label>
-        <select id="sc-primary" class="input" style="width:100%; height:80px;" multiple>
-          ${state.profiles.filter(p => p.is_active).map(p => `<option value="${p.id}">${escHtml(p.full_name || p.username)}</option>`).join("")}
-        </select>
+        ${checkboxList("sc-primary", keepers, { selected: creatorIsKeeper ? [state.profile.id] : [] })}
       </div>
-      ${isAdmin() ? `
+      ${!creatorIsKeeper ? `
       <div class="field"><label>${t("scCommitteeMembers")}</label>
-        <select id="sc-committee" class="input" style="width:100%; height:80px;" multiple>
-          ${state.profiles.filter(p => p.is_active).map(p => `<option value="${p.id}">${escHtml(p.full_name || p.username)}</option>`).join("")}
-        </select>
+        ${checkboxList("sc-committee", nonKeepers)}
       </div>` : ""}
       <div class="field" style="display:flex; align-items:center; gap:8px; flex-direction:row-reverse; justify-content:flex-end;">
         <label for="sc-hide" style="margin:0;">${t("scHideBookQty")}</label>
@@ -3774,13 +3793,13 @@ function openNewStockCountModal(main) {
 
   $("#sc-save", overlay).onclick = async () => {
     const scope = $("#sc-scope", overlay).value;
-    const itemIds = scope === "specific_items" ? Array.from($("#sc-items", overlay).selectedOptions).map(o => o.value) : null;
+    const itemIds = scope === "specific_items" ? checkboxListValues("sc-items", overlay) : null;
     if (scope === "specific_items" && (!itemIds || !itemIds.length)) { toast("اختار صنف واحد على الأقل", true); return; }
-    const primaryCounters = Array.from($("#sc-primary", overlay).selectedOptions).map(o => o.value);
-    const committeeSelect = $("#sc-committee", overlay);
-    const committeeMembers = committeeSelect ? Array.from(committeeSelect.selectedOptions).map(o => o.value) : [];
-    const pathSelect = $("#sc-path", overlay);
-    const path = pathSelect && pathSelect.value ? pathSelect.value : null;
+    const primaryCounters = checkboxListValues("sc-primary", overlay);
+    if (!primaryCounters.length) { toast("اختار أمين مخزن واحد على الأقل", true); return; }
+    const committeeMembers = creatorIsKeeper ? [] : checkboxListValues("sc-committee", overlay);
+    const pathEl = $("#sc-path", overlay);
+    const path = creatorIsKeeper ? "primary_only" : (pathEl.value || null);
 
     const { data: sessionId, error } = await sb.rpc("create_stock_count_session", {
       p_warehouse_id: $("#sc-warehouse", overlay).value,
@@ -3828,8 +3847,13 @@ function renderStockCountDetailView(main) {
   const isPrimary = scIsUserInRole(session.id, "primary_counter");
   const isCommittee = scIsUserInRole(session.id, "committee_member");
   const admin = isAdmin();
-  const canActPrimary = (isPrimary || admin) && session.status === "primary_count";
-  const canActCommittee = (isCommittee || admin) && session.status === "committee_review";
+  // ⚠️ الأدمن ميقدرش يدخل أرقام الجرد بنفسه (لا في المرحلة الأولى ولا
+  // اللجنة) — دوره إدارة/اعتماد بس، حفاظًا على فصل المهام. لو الأدمن
+  // نفسه معيَّن فعليًا كأمين مخزن أو عضو لجنة في الجلسة دي (isPrimary/
+  // isCommittee) فده وضع مختلف ومسموح، لكن مجرد كونه admin مبيدّيهوش
+  // صلاحية إدخال تلقائية.
+  const canActPrimary = isPrimary && session.status === "primary_count";
+  const canActCommittee = isCommittee && session.status === "committee_review";
   const canStart = (isPrimary || isCommittee || admin) && session.status === "draft";
 
   const itemLabel = (row) => row.item_id ? escHtml(state.items.find(i => i.id === row.item_id)?.name || "—") : `<em>${escHtml(row.unregistered_item_note || "صنف غير مسجَّل")}</em>`;
