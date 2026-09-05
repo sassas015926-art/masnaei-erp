@@ -3657,7 +3657,7 @@ async function renderStockCount(main) {
   if (state.scDetail) { renderStockCountDetailView(main); return; }
   if (!_stockCountLoaded) { main.innerHTML = `<div class="empty-note">جاري تحميل بيانات الجرد...</div>`; await ensureStockCount(); if (state.tab !== "stockCount") return; }
 
-  const pending = isAdmin() ? state.stockCountSessions.filter(s => s.status === "pending_approval") : [];
+  const pending = canApproveSc() ? state.stockCountSessions.filter(s => s.status === "pending_approval") : [];
 
   main.innerHTML = `
     <div class="section-header">
@@ -3700,6 +3700,11 @@ async function renderStockCount(main) {
 // المصنع" هنا لما يتعمل كدور مستخدم مستقبلًا — مكان واحد بس للتعديل)
 const SC_PATH_DECIDERS = ["admin", "factory_manager"];
 function canDecideScPath() { return SC_PATH_DECIDERS.includes(state.profile?.role); }
+// ⚠️ اعتماد/رفض الجرد مقصور على مدير المصنع (مش مدير النظام) — نفس
+// القاعدة المطبَّقة في الداتابيز بالظبط. مكان واحد بس للتعديل لما دور
+// "صاحب المصنع" يتضاف مستقبلًا للمستخدمين.
+const SC_APPROVERS = ["factory_manager"];
+function canApproveSc() { return SC_APPROVERS.includes(state.profile?.role); }
 function checkboxList(id, options, { selected = [] } = {}) {
   return `<div id="${id}" class="sc-checkbox-list" style="max-height:140px; overflow-y:auto; border:1px solid var(--ink12); border-radius:8px; padding:8px;">
     ${options.length ? options.map(o => `
@@ -3848,7 +3853,9 @@ function renderStockCountDetailView(main) {
   const isCommittee = scIsUserInRole(session.id, "committee_member");
   const admin = isAdmin();
   // ⚠️ الأدمن ميقدرش يدخل أرقام الجرد بنفسه (لا في المرحلة الأولى ولا
-  // اللجنة) — دوره إدارة/اعتماد بس، حفاظًا على فصل المهام. لو الأدمن
+  // اللجنة) ولا يعتمد/يرفض (ده بقى مقصور على مدير المصنع فقط) — دور
+  // مدير النظام هنا تقني بحت (ممكن يبدأ الجلسة بس عشان يساعد لو حصل
+  // تعطل). لو الأدمن
   // نفسه معيَّن فعليًا كأمين مخزن أو عضو لجنة في الجلسة دي (isPrimary/
   // isCommittee) فده وضع مختلف ومسموح، لكن مجرد كونه admin مبيدّيهوش
   // صلاحية إدخال تلقائية.
@@ -3909,7 +3916,7 @@ function renderStockCountDetailView(main) {
     <div style="display:flex; gap:10px; justify-content:flex-end;">
       ${canActPrimary ? `<button class="btn-primary" id="sc-submit-primary">${t("scSubmitPrimaryBtn")}</button>` : ""}
       ${canActCommittee ? `<button class="btn-primary" id="sc-submit-committee">${t("scSubmitCommitteeBtn")}</button>` : ""}
-      ${admin && session.status === "pending_approval" ? `
+      ${canApproveSc() && session.status === "pending_approval" ? `
         <button class="step-btn" style="width:auto; padding:8px 16px; color:var(--red);" id="sc-reject">${t("scRejectBtn")}</button>
         <button class="btn-primary" style="background:var(--green);" id="sc-approve">${t("scApproveBtn")}</button>` : ""}
     </div>`}
